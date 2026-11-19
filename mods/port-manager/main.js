@@ -4,6 +4,7 @@ import { props, theme, shared, setShared, checking, openOverlay, closeOverlay, w
 import { compileFilter } from './model.js';
 import { scanAll } from './runtime.js';
 import { snapshotsChanged } from './discovery.js';
+import { groupPorts } from './groups.js';
 
 const PREF='port-manager.preferences', DATA='port-manager.snapshots';
 const defaults={strategy:'process',name:'',nameMode:'text',nameAction:'exclude',ports:'',portAction:'include',terminalOnly:false,lowPortsOnly:false,includeUnattached:false};
@@ -30,6 +31,7 @@ export default class PortManager extends View {
   const t=theme(),p=preferences(),all=snapshots(),records=all.flatMap(x=>x.records),filter=compileFilter(p),shown=records.filter(filter);
   if(!this.popup) return h_flex().size_full().justify_end().items_center().bg(t.chrome).border_t(1).border_color(t.border)
    .child(this.button('pm-open',`Ports ${shown.length}`,()=>{const v=globalThis.window?.viewport_size?.(),z=settings().zoom??1;openOverlay({mod:'port-manager',kind:'popup',at:v?{x:Math.max(0,v.width-490*z),y:Math.max(0,v.height-630*z)}:'pointer',width:480,height:600,props:{view:'popup',height:600}});},t));
+  const groups=groupPorts(all,spaces(),p.strategy,filter);
   const toggle=(key,label)=>this.button(`pm-${key}`,`${label}: ${p[key]?'On':'Off'}`,cx=>this.set(key,!p[key],cx),t);
   return v_flex().w_full().h(props()?.height ?? 600).p(10).gap(6).bg(t.popover).text_color(t.foreground).text_size(12)
    .on_key_down((e,cx)=>{if(e.key==='escape'){closeOverlay(props().overlay);cx.stop_propagation();}})
@@ -49,12 +51,29 @@ export default class PortManager extends View {
    .when(!all.length,el=>el.child(div().text_color(t.muted).child('Scanning listeners…')))
    .when(all.length>0 && !records.length,el=>el.child(div().text_color(t.muted).child('No listeners found. Check machine errors below.')))
    .when(records.length>0 && !shown.length,el=>el.child(div().text_color(t.muted).child('No ports match the current filters.')))
-   .child(v_flex().id('pm-list').flex_1().min_h(0).overflow_y_scrollbar().children(all.flatMap((group,i)=>{
-    const rows=group.records.filter(filter); return [h_flex().id(`pm-machine-${i}`).h(28).flex_none().px(6).items_center().bg(t.raised).child(div().flex_1().child(group.machine??'This computer')).child(div().text_color(group.stale?t.ansi1:t.muted).child(group.stale?`Stale: ${group.error}`:`${rows.length} ports`)),...rows.map((r,j)=>{
-      const space=p.strategy==='process'?r.processSpace:r.cwdSpace; const attribution=(space ? (spaces().find(x=>x.id===space)?.name ?? space) : null)??(p.strategy==='cwd'&&r.cwdReason==='ambiguous'?'Ambiguous checkout':r.terminal==='yes'?'Other terminal':r.terminal==='no'?'Other process':'Unknown');
-      return h_flex().id(`pm-row-${i}-${j}`).h(43).flex_none().gap(8).px(6).items_center().border_b(1).border_color(t.border)
-       .child(div().w(55).flex_none().child(String(r.port))).child(v_flex().flex_1().min_w(0).child(div().truncate().child(`${r.name??'Unknown process'}${r.pid?` · ${r.pid}`:''}`)).child(div().truncate().text_color(t.dim).child(`${r.host} · ${attribution}`)));
-    })];
-   })));
+   .child(v_flex().id('pm-list').flex_1().min_h(0).overflow_y_scrollbar()
+    .children(groups.issues.map((issue,i)=>h_flex().id(`pm-error-${i}`).flex_none().px(8).py(5).text_color(t.ansi1)
+     .child(`${issue.machine??'This computer'}: ${issue.error??'Scan failed'}${issue.at ? ' · showing last results' : ''}`)))
+    .children(groups.spaceGroups.flatMap((group,i)=>[
+     h_flex().id(`pm-space-${i}`).h(34).flex_none().px(10).gap(8).items_center().bg(t.raised)
+      .child(div().flex_1().min_w(0).truncate().font_medium().child(group.space.name))
+      .when(Boolean(group.space.machine),el=>el.child(div().text_color(t.muted).child(group.space.machine)))
+      .child(div().text_color(t.muted).child(`${group.records.length}`)),
+     ...group.records.map((entry,j)=>this.portRow(entry,`space-${i}-${j}`,t))
+    ]))
+    .when(groups.otherGroups.length>0,el=>el.child(h_flex().id('pm-other-title').h(34).flex_none().px(10).items_center().font_medium().child('Other ports')))
+    .children(groups.otherGroups.flatMap((group,i)=>{
+     const labels={terminal:'Other terminal',process:'Other process',unknown:'Unknown attribution',ambiguous:'Ambiguous checkout'};
+     return [h_flex().id(`pm-other-${i}`).h(30).flex_none().px(10).gap(8).items_center().bg(t.raised)
+      .child(div().flex_1().min_w(0).truncate().child(`${group.machine??'This computer'} · ${labels[group.category]}`))
+      .child(div().text_color(t.muted).child(`${group.records.length}`)),
+      ...group.records.map((entry,j)=>this.portRow(entry,`other-${i}-${j}`,t))];
+    })));
+ }
+ portRow({record:r,stale},id,t){
+  return h_flex().id(`pm-row-${id}`).h(48).flex_none().gap(8).px(10).items_center().border_b(1).border_color(t.border)
+   .child(div().w(55).flex_none().child(String(r.port)))
+   .child(v_flex().flex_1().min_w(0).child(div().truncate().child(`${r.name??'Unknown process'}${r.pid?` · ${r.pid}`:''}`))
+    .child(div().truncate().text_color(t.dim).child(`${r.host}${stale?' · Stale':''}`)));
  }
 }
