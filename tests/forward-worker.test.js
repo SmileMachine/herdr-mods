@@ -28,3 +28,15 @@ test('edit stops the existing forward before starting the new mapping',async()=>
  const worker=createForwardWorker({read:()=>value,write:v=>{value=v},controller:{stop:async()=>{calls.push('stop');return {state:'stopped'}},start:async req=>{calls.push(['start',req]);return {state:'running'}}},adapter:{list:async()=>[{identity:{token:'old'},metadata:{local:4001}}]}});
  await worker.execute();assert.deepEqual(calls,['stop',['start',{localPort:4002}]]);assert.equal(value.result.state,'running');
 });
+test('remove only deletes a forward after fresh stopped verification',async()=>{
+ let value={id:'6',phase:'queued',action:'remove',token:'old'},removed=0;
+ const worker=createForwardWorker({read:()=>value,write:v=>{value=v},controller:{status:async()=>({state:'stopped'})},adapter:{list:async()=>[{identity:{token:'old'},metadata:{local:4001}}],remove:async()=>{removed++}}});
+ await worker.execute();assert.equal(value.result.state,'removed');assert.equal(removed,1);
+});
+test('remove refuses a live or unknown forward',async()=>{
+ for (const state of ['running','unknown']) {
+  let value={id:`6-${state}`,phase:'queued',action:'remove',token:'old'},removed=0;
+  const worker=createForwardWorker({read:()=>value,write:v=>{value=v},controller:{status:async()=>({state})},adapter:{list:async()=>[{identity:{token:'old'},metadata:{}}],remove:async()=>{removed++}}});
+  await worker.execute();assert.equal(value.result.state,state);assert.equal(removed,0);
+ }
+});

@@ -20,6 +20,14 @@ export function createForwardWorker({read,write,controller,adapter}) {
           const stopped=await controller.stop(item.identity,item.metadata);
           result=stopped.state==='stopped'?await controller.start(command.request):stopped;
         }
+      } else if(command.action==='remove') {
+        const item=(await adapter.list()).find(x=>x.identity?.token===command.token);
+        if(!item) result={state:'removed'};
+        else {
+          const state=await controller.status(item.identity,item.metadata);
+          if(state.state!=='stopped') result={state:state.state==='unknown'?'unknown':'running',reason:'Only stopped forwards can be removed.'};
+          else { await adapter.remove(item.identity.token); result={state:'removed'}; }
+        }
       } else throw new Error('Unsupported forward action.');
       write({id:command.id,phase:'done',result});
     } catch(e) {write({id:command.id,phase:'done',result:{state:'error',reason:String(e?.message??e)}});}

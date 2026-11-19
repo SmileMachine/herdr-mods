@@ -124,7 +124,7 @@ export default class PortManager extends View {
       .child(h_flex().gap(4).items_center()
        .child(div().flex_1().min_w(0).truncate().child(`${item.metadata.machine}:${item.metadata.remote} → localhost:${item.metadata.local} · ${state}`))
        .when(state!=='stopped'&&state!=='checking'&&item.identity?.address,e=>e.child(this.iconButton(`pm-edit-${i}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-stop-${i}`,'stop','Stop forward',cx=>this.forwardAction({action:'stop',token:item.identity.token},cx),t)))
-       .when(state==='stopped',e=>e.child(this.iconButton(`pm-retry-${i}`,'play','Start forward',cx=>{this.forwardRecord={...item.metadata,port:item.metadata.remote};this.localPort.set_value(String(item.metadata.local));this.panel=null;this.forwardMessage='';cx.notify();},t))))
+       .when(state==='stopped',e=>e.child(this.iconButton(`pm-retry-${i}`,'play','Start forward',cx=>{this.forwardRecord={...item.metadata,port:item.metadata.remote};this.localPort.set_value(String(item.metadata.local));this.panel=null;this.forwardMessage='';cx.notify();},t)).child(this.iconButton(`pm-remove-${i}`,'trash','Remove stopped forward',cx=>this.forwardAction({action:'remove',token:item.identity.token},cx),t))))
       .when(state==='unknown',e=>e.child(div().text_color(t.muted).child(`${status.reason??'Unable to verify this forward.'}${item.identity.address?` Terminal: ${item.identity.address}.`:''}`)));
     }))
     .when(!this.forwardEntries.length,e=>e.child(div().text_color(t.muted).child('No managed forwards.')))
