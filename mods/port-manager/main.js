@@ -10,6 +10,7 @@ import {createForwardRuntime} from './forward-runtime.js';
 import {createForwardWorker} from './forward-worker.js';
 import {managedForwardFor, sameListener} from './forward-match.js';
 import {forwardFeedback} from './forward-feedback.js';
+import {browserUrl} from './port-url.js';
 
 const PREF='port-manager.preferences', DATA='port-manager.snapshots', FORWARD_CMD='port-manager.forward-command';
 const defaults={strategy:'process',name:'',nameMode:'text',nameAction:'exclude',ports:'',portAction:'include',includeUnattached:false};
@@ -41,11 +42,20 @@ export default class PortManager extends View {
   const result=applyDrafts(next,this.name.value(),this.ports.value());
   this.errors=result.errors;setShared(PREF,result.next);cx.notify();
  }
- iconButton(id,icon,label,action,t){
-  return div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(5).text_color(t.dim)
+ iconButton(id,icon,label,action,t,hidden=false){
+  return div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(5).text_color(hidden?'#00000000':t.dim).focus(s=>s.text_color(t.foreground))
    .cursor_pointer().tooltip(label).accessibility_label(label).tab_index(0).hover(s=>s.bg(t.hover).text_color(t.foreground))
    .on_click((_e,cx)=>{action(cx);cx.stop_propagation();}).on_key_down((e,cx)=>{if(e.key==='enter'||e.key==='space'){action(cx);cx.stop_propagation();}})
    .child(svg(`mods/port-manager/icons/${icon}.svg`).size(14));
+ }
+ browserLink(id,port,t,active=true){
+  const url=active?browserUrl(port,true):null, text=`→ localhost:${port}`;
+  return div().id(id).max_w(120).truncate().text_size(12).text_color(t.muted)
+   .when(Boolean(url),el=>el.cursor_pointer().tooltip('Open in browser').accessibility_label(`Open localhost port ${port} in browser`).tab_index(0)
+    .hover(s=>s.text_color(t.foreground)).focus(s=>s.text_color(t.foreground))
+    .on_click((_e,cx)=>{cx.open_url(url);cx.stop_propagation();})
+    .on_key_down((e,cx)=>{if(e.key==='enter'||e.key==='space'){cx.open_url(url);cx.stop_propagation();}}))
+   .child(text);
  }
  button(id,label,action,t,selected=false){
   return div().id(id).px(8).py(5).rounded(5).bg(selected?t.selected:t.raised).text_color(t.foreground)
@@ -124,7 +134,10 @@ export default class PortManager extends View {
      const editing=this.forwardRecord?.editorSource==='panel'&&(this.forwardRecord.token??this.forwardRecord.entryToken)===item.identity.token;
      return v_flex().id(`pm-forward-${i}`).gap(2)
       .child(h_flex().gap(4).items_center()
-       .child(div().flex_1().min_w(0).truncate().child(`${item.metadata.machine}:${item.metadata.remote} → localhost:${item.metadata.local} · ${feedback?.kind==='progress'?feedback.text:state}`))
+       .child(h_flex().flex_1().min_w(0).gap(4).items_center()
+        .child(div().min_w(0).truncate().child(`${item.metadata.machine}:${item.metadata.remote}`))
+        .child(this.browserLink(`pm-forward-panel-link-${i}`,item.metadata.local,t,state==='running'))
+        .child(div().flex_none().text_color(t.muted).child(`· ${feedback?.kind==='progress'?feedback.text:state}`)))
        .when(editing,e=>e.child(this.forwardEditor(`panel-${i}`,t,operationBusy)))
        .when(!editing&&state!=='stopped'&&state!=='checking'&&item.identity?.address,e=>e.child(this.iconButton(`pm-edit-${i}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-stop-${i}`,'stop','Stop forward',cx=>this.forwardAction({action:'stop',token:item.identity.token},cx),t)))
        .when(!editing&&state==='stopped',e=>e.child(this.iconButton(`pm-edit-${i}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-retry-${i}`,'play','Start forward',cx=>{this.clearForwardError();this.forwardRecord={...item.metadata,port:item.metadata.remote,editorSource:'panel',entryToken:item.identity.token};this.localPort.set_value(String(item.metadata.local));this.forwardMessage='';cx.notify();},t)).child(this.iconButton(`pm-remove-${i}`,'trash','Remove stopped forward',cx=>this.forwardAction({action:'remove',token:item.identity.token},cx),t))))
@@ -181,15 +194,18 @@ export default class PortManager extends View {
     ? sameListener(this.forwardRecord,r)
     : managed?.identity?.token===this.forwardRecord.token);
   const edit=(cx)=>{this.clearForwardError();this.forwardRecord={...managed.metadata,token:managed.identity.token,port:managed.metadata.remote};this.localPort.set_value(String(managed.metadata.local));this.panel=null;this.forwardMessage='';cx.notify();};
+  const hovered=this.hoveredPortRow===id;
   return v_flex().id(`pm-row-${id}`).flex_none().border_b(1).border_color(t.border).hover(s=>s.bg(t.hover))
+   .on_hover((on,cx)=>{if(on&&this.hoveredPortRow!==id){this.hoveredPortRow=id;cx.notify();}else if(!on&&this.hoveredPortRow===id){this.hoveredPortRow=null;cx.notify();}})
    .child(h_flex().h(53).px(14).gap(14).items_center()
    .child(div().w(56).flex_none().self_start().pt(9).font_family(settings().font_family ?? 'JetBrains Mono').font_bold().child(String(r.port)))
    .child(v_flex().flex_1().min_w(0).gap(2).child(div().truncate().text_color(t.muted).child(`${r.name??'Unknown process'}${r.pid?` · ${r.pid}`:''}`))
     .child(div().truncate().text_size(12).text_color(t.dim).child(feedback?.kind==='progress'?feedback.text:`${r.host}${stale?' · Stale':''}`)))
    .when(editing,el=>el.child(this.forwardEditor(id,t,operationBusy)))
-   .when(!editing&&Boolean(r.machine)&&!stale&&!managed,el=>el.child(this.iconButton(`pm-forward-action-${id}`,'forward','Forward port',cx=>{this.clearForwardError();this.forwardRecord=r;this.localPort.set_value(String(r.port));this.panel=null;this.forwardMessage='';cx.notify();},t)))
+   .when(!editing&&!r.machine&&!stale&&Boolean(browserUrl(r.port)),el=>el.child(this.iconButton(`pm-open-local-${id}`,'external','Open in browser',cx=>cx.open_url(browserUrl(r.port)),t,!hovered)))
+   .when(!editing&&Boolean(r.machine)&&!stale&&!managed,el=>el.child(this.iconButton(`pm-forward-action-${id}`,'forward','Forward port',cx=>{this.clearForwardError();this.forwardRecord=r;this.localPort.set_value(String(r.port));this.panel=null;this.forwardMessage='';cx.notify();},t,!hovered)))
    .when(!editing&&Boolean(r.machine)&&!stale&&managed,el=>el.child(h_flex().gap(2).items_center()
-    .child(div().max_w(120).truncate().text_size(12).text_color(t.muted).tooltip(`Forwarded to localhost:${managed.metadata.local}`).child(`→ localhost:${managed.metadata.local}`))
+    .child(this.browserLink(`pm-forward-link-${id}`,managed.metadata.local,t,state==='running'))
     .when(state!=='stopped'&&state!=='checking'&&managed.identity?.address,e=>e.child(this.iconButton(`pm-edit-forward-${id}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-stop-forward-${id}`,'stop','Stop forward',cx=>this.forwardAction({action:'stop',token:managed.identity.token},cx),t)))
     .when(state==='stopped',e=>e.child(this.iconButton(`pm-edit-forward-${id}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-remove-forward-${id}`,'trash','Remove stopped forward',cx=>this.forwardAction({action:'remove',token:managed.identity.token},cx),t))))))
    .when(feedback?.kind==='error',el=>el.child(div().px(14).pb(8).text_size(12).text_color(t.ansi1).child(feedback?.text??'')));
