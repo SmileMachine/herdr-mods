@@ -13,6 +13,13 @@ export function createForwardWorker({read,write,controller,adapter}) {
       else if(command.action==='stop') {
         const item=(await adapter.list()).find(x=>x.identity?.token===command.token);
         result=item?await controller.stop(item.identity,item.metadata):{state:'unknown',reason:'Forward record not found.'};
+      } else if(command.action==='edit') {
+        const item=(await adapter.list()).find(x=>x.identity?.token===command.token);
+        if(!item) result={state:'unknown',reason:'Forward record not found.'};
+        else {
+          const stopped=await controller.stop(item.identity,item.metadata);
+          result=stopped.state==='stopped'?await controller.start(command.request):stopped;
+        }
       } else throw new Error('Unsupported forward action.');
       write({id:command.id,phase:'done',result});
     } catch(e) {write({id:command.id,phase:'done',result:{state:'error',reason:String(e?.message??e)}});}

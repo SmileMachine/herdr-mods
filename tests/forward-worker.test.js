@@ -23,3 +23,8 @@ test('closing a UI observer does not cancel work owned by the worker',async()=>{
  // The observer is discarded; only the persistent owner holds the task.
  release({state:'running'});await task;assert.equal(shared.phase,'done');assert.equal(shared.result.state,'running');
 });
+test('edit stops the existing forward before starting the new mapping',async()=>{
+ let value={id:'5',phase:'queued',action:'edit',token:'old',request:{localPort:4002}},calls=[];
+ const worker=createForwardWorker({read:()=>value,write:v=>{value=v},controller:{stop:async()=>{calls.push('stop');return {state:'stopped'}},start:async req=>{calls.push(['start',req]);return {state:'running'}}},adapter:{list:async()=>[{identity:{token:'old'},metadata:{local:4001}}]}});
+ await worker.execute();assert.deepEqual(calls,['stop',['start',{localPort:4002}]]);assert.equal(value.result.state,'running');
+});
