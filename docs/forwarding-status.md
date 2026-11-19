@@ -24,7 +24,14 @@ mapping needs an explicit state machine that reports whether the old or new
 forward is actually live. The host may not expose enough information to prove
 all of this; do not silently lower the ownership standard.
 
-Current environment observation on 2026-11-19: `hc machine ls --json` returned
-an empty list. Remote execution, actual SSH startup, shutdown, disconnect,
-conflict handling and restart recovery have not been verified. No configured
-machine was added or contacted for these tests.
+Environment observation on 2026-11-19: `mbp` is now configured and connected;
+remote `hc exec` works and reports Darwin with `lsof`, `ps`, and `python3`.
+A local `hc run` of SSH without agent configuration exited 255 with public-key
+authentication failure: the core's child environment has an empty
+`SSH_AUTH_SOCK`. A controlled test using an explicitly specified macOS launchd
+agent socket started successfully. `hc get` reported the actual SSH PID,
+creation time and argument vector, and `lsof` independently showed that PID
+owned the requested `127.0.0.1` listener. The test terminal was killed and
+removed; its listener disappeared. This did not test end-to-end traffic,
+port races, disconnect, restart recovery, replacement, or agent configuration
+portability. Never assume the observed launchd socket path is stable.
