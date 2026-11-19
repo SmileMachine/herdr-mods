@@ -10,6 +10,15 @@ export function parsePort(value) {
   return port;
 }
 
+function validIpv6(value) {
+  if (!/^[0-9a-fA-F:]+$/.test(value) || value.split('::').length > 2) return false;
+  const compressed = value.includes('::');
+  const parts = value.split('::');
+  const groups = parts.flatMap(part => part ? part.split(':') : []);
+  return groups.every(group => /^[0-9a-fA-F]{1,4}$/.test(group)) &&
+    (compressed ? groups.length < 8 : groups.length === 8);
+}
+
 export function remoteHost(host) {
   // Wildcard listeners are reachable through the corresponding loopback.
   if (host === '*' || host === '0.0.0.0') return '127.0.0.1';
@@ -17,7 +26,7 @@ export function remoteHost(host) {
   const value = host?.startsWith('[') && host.endsWith(']') ? host.slice(1,-1) : host;
   // IPv4 and IPv6 only. Reject zone IDs, names and malformed/injectable values.
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(value ?? '') && value.split('.').every(x => Number(x) <= 255)) return value;
-  if (/^[0-9a-fA-F:]+$/.test(value ?? '') && value.includes(':') && !value.includes(':::')) return value;
+  if (validIpv6(value ?? '')) return value;
   throw new Error('This listener address cannot be forwarded safely.');
 }
 
