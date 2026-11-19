@@ -33,3 +33,10 @@ test('stop rejects mismatched persisted mapping',async()=>{
  assert.equal((await f.controller.stop(f.saved.identity,{...f.saved.metadata,local:4001})).state,'unknown');
  assert.equal(f.killed,0);
 });
+
+test('refresh reports only verified live listeners as running',async()=>{
+ const f=fixture();f.owner=40;await f.controller.start(request);
+ assert.equal((await f.controller.status(f.saved.identity,f.saved.metadata)).state,'running');
+ f.owner=90;assert.equal((await f.controller.status(f.saved.identity,f.saved.metadata)).state,'unknown');
+ f.terminal={...f.terminal,state:'finished'};assert.equal((await f.controller.status(f.saved.identity,f.saved.metadata)).state,'stopped');
+});

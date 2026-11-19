@@ -30,6 +30,19 @@ export function createForwardController(io) {
     }
     return {state:'unknown',address,reason:'SSH listener did not appear; SSH may still be running.'};
   }
+  async function status(identity, metadata) {
+    if (!identity || !metadata || metadata.token !== identity.token) return {state:'unknown',reason:'Missing or inconsistent forward identity.'};
+    try {
+      const terminal=await io.getTerminal(identity.address);
+      if (terminal?.state !== 'live') return {state:'stopped'};
+      const owner=await io.listenerOwner(metadata.local);
+      const label=terminal?.labels?.['port-manager.forward.v1'];
+      let labelMeta; try { labelMeta=JSON.parse(decodeURIComponent(label)); } catch {}
+      if (!matchesForwardIdentity(terminal,identity) || !labelMeta || ['token','machine','host','remote','local'].some(key=>labelMeta[key]!==metadata[key]) || owner!==identity.pid)
+        return {state:'unknown',reason:'SSH identity or listener ownership could not be verified.'};
+      return {state:'running'};
+    } catch { return {state:'unknown',reason:'Unable to verify SSH ownership.'}; }
+  }
   async function stop(identity, metadata) {
     if (!identity || !metadata || metadata.token !== identity.token) return {state:'unknown',reason:'Missing or inconsistent forward identity.'};
     let terminal, owner;
@@ -47,5 +60,5 @@ export function createForwardController(io) {
     await io.remove(identity.token);
     return {state:'stopped'};
   }
-  return {start,stop};
+  return {start,stop,status};
 }
