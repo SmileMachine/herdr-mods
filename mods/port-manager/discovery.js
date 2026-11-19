@@ -20,6 +20,21 @@ export function mergeMachineSnapshots(targets, results, previous, now) {
   });
 }
 
+// Bound parallel external commands, and retain input order even when they finish out of order.
+export async function mapLimit(items, limit, fn) {
+  if (!Number.isInteger(limit) || limit < 1) throw new Error('Invalid concurrency limit');
+  const output = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const index = next++;
+      output[index] = await fn(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return output;
+}
+
 // Dependency injection keeps machine errors, fallbacks and classification testable.
 export async function scanMachine(machine, adapter, context) {
   const opts = { on: machine, timeout: 10000 };
@@ -39,15 +54,16 @@ export async function scanMachine(machine, adapter, context) {
   } catch {}
   const shells = await context.shells(machine);
   const candidates = await context.candidates(machine);
-  const records = [];
-  for (const listener of listeners) {
+  // A process may own several sockets. Inspect its cwd only once per scan,
+  // with bounded concurrency; do not cache across scans because cwd/PID can change.
+  const pids = [...new Set(listeners.map(x => x.pid).filter(Boolean))];
+  const cwdValues = await mapLimit(pids, 4, async pid => {
+    try { return await context.cwd(machine, pid); } catch { return null; }
+  });
+  const cwdByPid = new Map(pids.map((pid, i) => [pid, cwdValues[i]]));
+  return listeners.map(listener => {
     const proc = classifyProcess(listener.pid, processInfo.parents, processInfo.ttys, shells, complete);
-    let cwd = null;
-    if (listener.pid) {
-      try { cwd = await context.cwd(machine, listener.pid); } catch {}
-    }
-    const byCwd = classifyCwd(cwd, candidates);
-    records.push({ ...listener, machine, terminal: proc.terminal, processSpace: proc.space, cwdSpace: byCwd.space, cwdCandidates: byCwd.candidates, cwdReason: byCwd.reason });
-  }
-  return records;
+    const byCwd = classifyCwd(cwdByPid.get(listener.pid), candidates);
+    return { ...listener, machine, terminal: proc.terminal, processSpace: proc.space, cwdSpace: byCwd.space, cwdCandidates: byCwd.candidates, cwdReason: byCwd.reason };
+  });
 }

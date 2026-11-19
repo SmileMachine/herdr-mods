@@ -19,3 +19,16 @@ test('failed scan is not an empty success and stale data remains marked',()=>{
  const r=mergeMachineSnapshots(['a','b'],[{status:'rejected',reason:Error('offline')},{status:'fulfilled',value:[]}],prev,100);
  assert.equal(r[0].stale,true); assert.equal(r[0].records[0].port,80); assert.equal(r[0].at,42); assert.equal(r[1].stale,false);
 });
+
+test('cwd scans are deduplicated per pid, bounded, and refreshed on each scan', async () => {
+ let active = 0, peak = 0, calls = 0;
+ const lines = Array.from({length: 7}, (_, i) => `p${i + 20}\ncnode\nn127.0.0.1:${3000 + i}\nn[::1]:${3000 + i}\n`).join('');
+ const adapter = {exec: async cmd => cmd === 'lsof' ? {code:0,stdout:lines} : {code:0,stdout:''}};
+ const context = {shells:async()=>new Map(),candidates:async()=>[],cwd:async()=>{
+  calls++; active++; peak = Math.max(peak, active);
+  await new Promise(resolve => setTimeout(resolve, 2)); active--; return '/repo';
+ }};
+ const result = await scanMachine(null, adapter, context);
+ assert.equal(result.length, 14); assert.equal(calls, 7); assert.ok(peak <= 4);
+ await scanMachine(null, adapter, context); assert.equal(calls, 14);
+});
