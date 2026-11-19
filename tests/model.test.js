@@ -36,6 +36,11 @@ test('regex uses standard JavaScript groups, alternation and quantifiers', () =>
 });
 test('filters combine fields without mutating records and retain unknown names', () => {
   const rows=[{name:'codex',port:3000,terminal:'yes'},{name:'node',port:8000,terminal:'no'},{name:null,port:3001,terminal:'unknown'}];
-  const before=structuredClone(rows); const filter=compileFilter({name:'codex',nameAction:'exclude',ports:'3000-3999',terminalOnly:true});
+  const before=structuredClone(rows); const filter=compileFilter({name:'codex',nameAction:'exclude',ports:'3000-3999'});
   assert.deepEqual(rows.filter(filter),[rows[2]]); assert.deepEqual(rows,before);
+});
+
+test('removed quick filters do not hide ports from old saved preferences', () => {
+  const filter=compileFilter({terminalOnly:true,lowPortsOnly:true});
+  assert.equal(filter({name:'service',port:50000,terminal:'no'}),true);
 });

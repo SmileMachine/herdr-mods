@@ -91,8 +91,6 @@ export function compileFilter(config = {}) {
       const match = ports.some(([lo, hi]) => record.port >= lo && record.port <= hi);
       if (match === portExclude) return false;
     }
-    if (config.terminalOnly && record.terminal === 'no') return false;
-    if (config.lowPortsOnly && record.port >= 32768) return false;
     return true;
   };
 }
