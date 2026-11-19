@@ -17,3 +17,9 @@ export function managedForwardFor(record, entries) {
     entry.metadata.host === record.host && entry.metadata.remote === record.port);
   return exact ?? entries.find(entry => matchesForwardListener(record, entry?.metadata));
 }
+
+// Snapshots cross Herdr's shared-state boundary and may be cloned on every read.
+export function sameListener(a, b) {
+  return Boolean(a && b && a.machine === b.machine && a.host === b.host &&
+    a.port === b.port && a.pid === b.pid);
+}
