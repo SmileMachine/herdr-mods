@@ -40,3 +40,11 @@ test('refresh reports only verified live listeners as running',async()=>{
  f.owner=90;assert.equal((await f.controller.status(f.saved.identity,f.saved.metadata)).state,'unknown');
  f.terminal={...f.terminal,state:'finished'};assert.equal((await f.controller.status(f.saved.identity,f.saved.metadata)).state,'stopped');
 });
+
+test('finished saved forwards may be replaced; unknown ownership blocks replacement',async()=>{
+ const f=fixture();f.io.lookup=async()=>({identity:{address:'told',token:'x'},metadata:{token:'x',local:3001}});
+ f.io.getTerminal=async()=>({state:'finished',address:'told',pid:3,created_ms:2,argv:['ssh'],labels:{'port-manager.forward.v1':encodeURIComponent(JSON.stringify({v:1,token:'a'.repeat(32),machine:'m',host:'*',remote:3000,local:3001}))}}); f.io.lookup=async()=>({identity:{address:'told',token:'a'.repeat(32),pid:3,createdMs:2,argv:['ssh']},metadata:{token:'a'.repeat(32),local:3001}});let removed=false;f.io.remove=async()=>{removed=true};
+ await f.controller.start(request);assert.equal(removed,true);
+ const g=fixture();g.io.lookup=async()=>({identity:{address:'told',token:'x'},metadata:{token:'x',local:3001}});g.io.getTerminal=async()=>{throw Error('offline')};
+ await assert.rejects(g.controller.start(request),/cannot be verified/);
+});

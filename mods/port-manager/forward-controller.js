@@ -6,7 +6,12 @@ import {matchesForwardIdentity} from './forward-ownership.js';
 export function createForwardController(io) {
   async function start(request) {
     const plan = planForward(request, await io.machines(), await io.token());
-    if (await io.lookup(plan.metadata)) throw new Error('A forward for this listener already exists.');
+    const existing=await io.lookup(plan.metadata);
+    if (existing) {
+      const state=await status(existing.identity,existing.metadata);
+      if(state.state!=='stopped')throw new Error('A forward for this listener already exists or cannot be verified.');
+      await io.remove(existing.identity.token);
+    }
     if (await io.portInUse(plan.metadata.local)) throw new Error('The local port is already in use.');
     const argv = [plan.command, ...plan.args];
     const address = await io.startTerminal(plan.label, argv);
@@ -34,7 +39,10 @@ export function createForwardController(io) {
     if (!identity || !metadata || metadata.token !== identity.token) return {state:'unknown',reason:'Missing or inconsistent forward identity.'};
     try {
       const terminal=await io.getTerminal(identity.address);
-      if (terminal?.state !== 'live') return {state:'stopped'};
+      if (terminal?.state !== 'live') {
+        if (!matchesForwardIdentity({...terminal,state:'live'},identity)) return {state:'unknown',reason:'Saved terminal identity changed.'};
+        return {state:'stopped'};
+      }
       const owner=await io.listenerOwner(metadata.local);
       const label=terminal?.labels?.['port-manager.forward.v1'];
       let labelMeta; try { labelMeta=JSON.parse(decodeURIComponent(label)); } catch {}
