@@ -4,7 +4,7 @@ export function createForwardWorker({read,write,controller,adapter}) {
   let busy=false;
   async function execute() {
     const command=read();
-    if(busy || !command || command.phase!=='queued')return;
+    if(busy || !command || command.phase!=='queued')return false;
     busy=true;
     write({...command,phase:'running'});
     try {
@@ -17,6 +17,7 @@ export function createForwardWorker({read,write,controller,adapter}) {
       write({id:command.id,phase:'done',result});
     } catch(e) {write({id:command.id,phase:'done',result:{state:'error',reason:String(e?.message??e)}});}
     finally {busy=false;}
+    return true;
   }
   function interrupt() {
     const command=read();
