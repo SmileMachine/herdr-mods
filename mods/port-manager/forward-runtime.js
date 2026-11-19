@@ -1,11 +1,12 @@
-import {hc,exec} from 'herdr';
+import {hc,exec,readTextFile,writeTextFile,appHome} from 'herdr';
 import {randomBytes} from 'crypto';
 import {createForwardAdapter} from './forward-adapter.js';
+import {createForwardStore} from './forward-store.js';
 import {createForwardController} from './forward-controller.js';
 
-// Construct within the view using its own storage; overlay and status-bar
-// copies do not share localStorage. No process runs during construction.
-export function createForwardRuntime(storage) {
-  const adapter=createForwardAdapter({hc,exec,storage,randomToken:async()=>randomBytes(16).toString('hex')});
+// Constructing the runtime does not read files or start a process.
+export function createForwardRuntime() {
+  const store=createForwardStore({read:readTextFile,write:writeTextFile,path:`${appHome()}/port-manager-forwards.json`});
+  const adapter=createForwardAdapter({hc,exec,store,randomToken:async()=>randomBytes(16).toString('hex')});
   return {adapter,controller:createForwardController(adapter)};
 }
