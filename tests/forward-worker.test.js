@@ -25,7 +25,7 @@ test('closing a UI observer does not cancel work owned by the worker',async()=>{
 });
 test('edit stops the existing forward before starting the new mapping',async()=>{
  let value={id:'5',phase:'queued',action:'edit',token:'old',request:{localPort:4002}},calls=[];
- const worker=createForwardWorker({read:()=>value,write:v=>{value=v},controller:{stop:async()=>{calls.push('stop');return {state:'stopped'}},start:async req=>{calls.push(['start',req]);return {state:'running'}}},adapter:{list:async()=>[{identity:{token:'old'},metadata:{local:4001}}]}});
+ const worker=createForwardWorker({read:()=>value,write:v=>{value=v},controller:{status:async()=>({state:'running'}),stop:async()=>{calls.push('stop');return {state:'stopped'}},start:async req=>{calls.push(['start',req]);return {state:'running'}}},adapter:{list:async()=>[{identity:{token:'old'},metadata:{local:4001}}]}});
  await worker.execute();assert.deepEqual(calls,['stop',['start',{localPort:4002}]]);assert.equal(value.result.state,'running');
 });
 test('remove only deletes a forward after fresh stopped verification',async()=>{
@@ -39,4 +39,10 @@ test('remove refuses a live or unknown forward',async()=>{
   const worker=createForwardWorker({read:()=>value,write:v=>{value=v},controller:{status:async()=>({state})},adapter:{list:async()=>[{identity:{token:'old'},metadata:{}}],remove:async()=>{removed++}}});
   await worker.execute();assert.equal(value.result.state,state);assert.equal(removed,0);
  }
+});
+
+test('edit can restart a stopped record without trying to stop it again',async()=>{
+ let value={id:'7',phase:'queued',action:'edit',token:'old',request:{localPort:4002}},calls=[];
+ const worker=createForwardWorker({read:()=>value,write:v=>{value=v},controller:{status:async()=>({state:'stopped'}),stop:async()=>{calls.push('stop');return {state:'stopped'}},start:async req=>{calls.push(['start',req]);return {state:'running'}}},adapter:{list:async()=>[{identity:{token:'old'},metadata:{local:4001}}]}});
+ await worker.execute();assert.deepEqual(calls,[['start',{localPort:4002}]]);assert.equal(value.result.state,'running');
 });

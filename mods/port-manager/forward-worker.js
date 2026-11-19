@@ -17,8 +17,12 @@ export function createForwardWorker({read,write,controller,adapter}) {
         const item=(await adapter.list()).find(x=>x.identity?.token===command.token);
         if(!item) result={state:'unknown',reason:'Forward record not found.'};
         else {
-          const stopped=await controller.stop(item.identity,item.metadata);
-          result=stopped.state==='stopped'?await controller.start(command.request):stopped;
+          const current=await controller.status(item.identity,item.metadata);
+          if(current.state==='stopped') result=await controller.start(command.request);
+          else if(current.state==='running') {
+            const stopped=await controller.stop(item.identity,item.metadata);
+            result=stopped.state==='stopped'?await controller.start(command.request):stopped;
+          } else result=current;
         }
       } else if(command.action==='remove') {
         const item=(await adapter.list()).find(x=>x.identity?.token===command.token);
