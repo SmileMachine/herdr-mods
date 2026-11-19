@@ -198,9 +198,12 @@ export default class PortManager extends View {
   return v_flex().id(`pm-row-${id}`).flex_none().border_b(1).border_color(t.border).hover(s=>s.bg(t.hover))
    .on_hover((on,cx)=>{if(on&&this.hoveredPortRow!==id){this.hoveredPortRow=id;cx.notify();}else if(!on&&this.hoveredPortRow===id){this.hoveredPortRow=null;cx.notify();}})
    .child(h_flex().h(53).px(14).gap(14).items_center()
-   .child(div().w(56).flex_none().self_start().pt(9).font_family(settings().font_family ?? 'JetBrains Mono').font_bold().child(String(r.port)))
-   .child(v_flex().flex_1().min_w(0).gap(2).child(div().truncate().text_color(t.muted).child(`${r.name??'Unknown process'}${r.pid?` · ${r.pid}`:''}`))
-    .child(div().truncate().text_size(12).text_color(t.dim).child(feedback?.kind==='progress'?feedback.text:`${r.host}${stale?' · Stale':''}`)))
+   .child(v_flex().min_w(60).max_w(140).flex_shrink_1().gap(2)
+    .child(div().font_family(settings().font_family ?? 'JetBrains Mono').font_bold().child(String(r.port)))
+    .child(div().id(`pm-address-${id}`).truncate().text_size(12).text_color(t.dim).tooltip(String(r.host)).child(`${r.host}${stale?' · Stale':''}`)))
+   .child(v_flex().flex_1().min_w(0).gap(2)
+    .child(div().truncate().text_color(t.muted).child(r.name??'Unknown process'))
+    .child(div().id(`pm-pid-${id}`).truncate().text_size(12).text_color(t.dim).child(r.pid?`PID ${r.pid}`:'')))
    .when(editing,el=>el.child(this.forwardEditor(id,t,operationBusy)))
    .when(!editing&&!r.machine&&!stale&&Boolean(browserUrl(r.port)),el=>el.child(this.iconButton(`pm-open-local-${id}`,'external','Open in browser',cx=>cx.open_url(browserUrl(r.port)),t,!hovered)))
    .when(!editing&&Boolean(r.machine)&&!stale&&!managed,el=>el.child(this.iconButton(`pm-forward-action-${id}`,'forward','Forward port',cx=>{this.clearForwardError();this.forwardRecord=r;this.localPort.set_value(String(r.port));this.panel=null;this.forwardMessage='';cx.notify();},t,!hovered)))
@@ -208,6 +211,6 @@ export default class PortManager extends View {
     .child(this.browserLink(`pm-forward-link-${id}`,managed.metadata.local,t,state==='running'))
     .when(state!=='stopped'&&state!=='checking'&&managed.identity?.address,e=>e.child(this.iconButton(`pm-edit-forward-${id}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-stop-forward-${id}`,'stop','Stop forward',cx=>this.forwardAction({action:'stop',token:managed.identity.token},cx),t)))
     .when(state==='stopped',e=>e.child(this.iconButton(`pm-edit-forward-${id}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-remove-forward-${id}`,'trash','Remove stopped forward',cx=>this.forwardAction({action:'remove',token:managed.identity.token},cx),t))))))
-   .when(feedback?.kind==='error',el=>el.child(div().px(14).pb(8).text_size(12).text_color(t.ansi1).child(feedback?.text??'')));
+   .when(Boolean(feedback),el=>el.child(div().px(14).pb(8).text_size(12).text_color(feedback?.kind==='error'?t.ansi1:t.dim).child(feedback?.text??'')));
  }
 }

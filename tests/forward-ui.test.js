@@ -70,3 +70,22 @@ test('row hover reveals local and forward actions and running links open the for
  view.forwardStates={token:{state:'stopped'}};elements.clear();view.portRow({record:remote,stale:false},'remote',t);
  assert.equal(elements.get('pm-forward-link-remote').click,undefined);
 });
+
+test('listener row groups the raw address below its port and PID below its process',()=>{
+ const elements=new Map();
+ function el(){const target={children:[]};let proxy;proxy=new Proxy(target,{get(_t,key){
+  if(key==='id')return id=>{elements.set(id,target);return proxy};
+  if(key==='child')return value=>{target.children.push(value);return proxy};
+  if(key==='when')return (condition,fn)=>condition?fn(proxy):proxy;
+  return ()=>proxy;
+ }});return proxy;}
+ let source=readFileSync(new URL('../mods/port-manager/main.js',import.meta.url),'utf8');
+ source=source.replace(/^import .*;\s*$/gm,'').replace('export default class PortManager','class PortManager')+'\nthis.PortManager=PortManager;';
+ // Render through the real class while capturing each text-bearing element.
+ const context={View:class{},div:el,h_flex:el,v_flex:el,svg:el,Input:{new:el},settings:()=>({}),shared:()=>null,managedForwardFor,sameListener,forwardFeedback,browserUrl};
+ vm.runInNewContext(source,context);
+ const view=new context.PortManager();view.forwardEntries=[];view.forwardStates={};view.forwardRecord=null;
+ view.portRow({record:{machine:null,host:'*',port:49686,pid:709,name:'app'},stale:false},'test',{});
+ assert.deepEqual(elements.get('pm-address-test').children,['*']);
+ assert.deepEqual(elements.get('pm-pid-test').children,['PID 709']);
+});
