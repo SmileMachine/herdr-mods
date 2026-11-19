@@ -24,3 +24,10 @@ test('strategy, ambiguity, filtering, and stale errors are represented independe
  assert.equal(groupPorts(snapshots,spaces,'process').spaceGroups[0].space.id,'a');
  assert.equal(records.length,4);
 });
+
+test('other terminal groups precede other process groups regardless of scan order', () => {
+ const snapshots=[{machine:null,records:[row(1,{terminal:'no'}),row(2,{terminal:'yes'}),row(3,{terminal:'unknown'})]},
+  {machine:'remote',records:[row(4,{terminal:'no'}),row(5,{terminal:'yes'})]}];
+ const groups=groupPorts(snapshots,spaces,'process').otherGroups;
+ assert.deepEqual(groups.map(g=>[g.machine,g.category]),[[null,'terminal'],['remote','terminal'],[null,'unknown'],[null,'process'],['remote','process']]);
+});

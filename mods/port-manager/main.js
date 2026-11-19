@@ -12,7 +12,7 @@ const preferences=()=>({...defaults,...(shared(PREF)??{})});
 const snapshots=()=>shared(DATA)??[];
 export default class PortManager extends View {
  init(_p,cx) {
-  this.popup=props()?.view==='popup' || Boolean(props()?.overlay); this.error=''; this.busy=false; this.showFilters=false;
+  this.popup=props()?.view==='popup' || Boolean(props()?.overlay); this.error=''; this.busy=false; this.showFilters=false; this.expandedProcesses=new Set();
   if (this.popup) {
    const p=preferences(); this.name=InputState.new({value:p.name,placeholder:'Process name'}); this.ports=InputState.new({value:p.ports,placeholder:'Ports: 3000,8000-8999'});
    const changed=(_e,cx)=>{const next={...preferences(),name:this.name.value(),ports:this.ports.value()}; try {compileFilter(next);this.error='';setShared(PREF,next);} catch(e) {this.error=String(e.message??e);} cx.notify();};
@@ -64,10 +64,16 @@ export default class PortManager extends View {
     .when(groups.otherGroups.length>0,el=>el.child(h_flex().id('pm-other-title').h(34).flex_none().px(14).items_center().text_color(t.muted).border_b(1).border_color(t.border).child('Other ports')))
     .children(groups.otherGroups.flatMap((group,i)=>{
      const labels={terminal:'Other terminal',process:'Other process',unknown:'Unknown attribution',ambiguous:'Ambiguous checkout'};
-     return [h_flex().id(`pm-other-${i}`).h(34).flex_none().px(14).gap(8).items_center().bg(t.raised).border_b(1).border_color(t.border)
-      .child(div().flex_1().min_w(0).truncate().child(`${group.machine??'This computer'} · ${labels[group.category]}`))
-      .child(div().text_size(12).text_color(t.muted).child(`${group.records.length}`)),
-      ...group.records.map((entry,j)=>this.portRow(entry,`other-${i}-${j}`,t))];
+     const key=JSON.stringify([group.machine,group.category]);
+     const collapsible=group.category==='process', expanded=this.expandedProcesses.has(key);
+     const heading=h_flex().id(`pm-other-${i}`).h(34).flex_none().px(14).gap(8).items_center().bg(t.raised).border_b(1).border_color(t.border)
+      .when(collapsible,el=>el.cursor_pointer().hover(s=>s.bg(t.hover))
+       .tooltip(expanded?'Collapse other processes':'Expand other processes')
+       .accessibility_label(`${expanded?'Collapse':'Expand'} other processes on ${group.machine??'this computer'}`)
+       .on_click((_e,cx)=>{if(expanded)this.expandedProcesses.delete(key);else this.expandedProcesses.add(key);cx.notify();}))
+      .child(div().flex_1().min_w(0).truncate().child(`${collapsible?(expanded?'▾ ':'▸ '):''}${group.machine??'This computer'} · ${labels[group.category]}`))
+      .child(div().text_size(12).text_color(t.muted).child(`${group.records.length}`));
+     return [heading,...(collapsible&&!expanded?[]:group.records.map((entry,j)=>this.portRow(entry,`other-${i}-${j}`,t)))];
     })));
  }
  portRow({record:r,stale},id,t){

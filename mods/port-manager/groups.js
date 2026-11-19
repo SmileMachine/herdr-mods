@@ -24,5 +24,8 @@ export function groupPorts(snapshots, spaces, strategy, filter = () => true) {
       }
     }
   }
-  return {spaceGroups: buckets.filter(g => g.records.length), otherGroups: [...others.values()], issues};
+  // Stable category ordering is independent of scan/listener enumeration.
+  const order = {terminal: 0, ambiguous: 1, unknown: 2, process: 3};
+  const otherGroups = [...others.values()].sort((a, b) => order[a.category] - order[b.category]);
+  return {spaceGroups: buckets.filter(g => g.records.length), otherGroups, issues};
 }
