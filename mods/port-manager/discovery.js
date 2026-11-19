@@ -67,3 +67,10 @@ export async function scanMachine(machine, adapter, context) {
     return { ...listener, machine, terminal: proc.terminal, processSpace: proc.space, cwdSpace: byCwd.space, cwdCandidates: byCwd.candidates, cwdReason: byCwd.reason };
   });
 }
+
+// Observation timestamps should not redraw every Herdr mod on unchanged scans.
+// On actual data/status change, retain the newly recorded observation time.
+export function snapshotsChanged(previous, next) {
+  const comparable = list => list.map(({ at, ...snapshot }) => snapshot);
+  return JSON.stringify(comparable(previous)) !== JSON.stringify(comparable(next));
+}

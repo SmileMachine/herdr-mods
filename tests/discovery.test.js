@@ -32,3 +32,11 @@ test('cwd scans are deduplicated per pid, bounded, and refreshed on each scan', 
  assert.equal(result.length, 14); assert.equal(calls, 7); assert.ok(peak <= 4);
  await scanMachine(null, adapter, context); assert.equal(calls, 14);
 });
+
+test('snapshot comparison ignores successful refresh timestamps but not status and records', async () => {
+ const { snapshotsChanged } = await import('../mods/port-manager/discovery.js');
+ const before = [{machine:null,records:[{port:3000}],stale:false,error:null,at:10}];
+ assert.equal(snapshotsChanged(before,[{...before[0],at:20}]), false);
+ assert.equal(snapshotsChanged(before,[{...before[0],records:[{port:3001}],at:20}]), true);
+ assert.equal(snapshotsChanged(before,[{...before[0],stale:true,error:'offline'}]), true);
+});
