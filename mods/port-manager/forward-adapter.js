@@ -23,6 +23,7 @@ export function createForwardAdapter({hc,exec,store,randomToken}) {
     stopTerminal:async address=>{if(!/^t[0-9a-z]+$/.test(address))throw new Error('Invalid local terminal address.');parseResult(await hc(['kill',address,'--json']));},
     listenerOwner:async port=>{const found=await listeners(port);if(!found.length)return null;if(found.length!==1||found[0].host!=='127.0.0.1'||!found[0].pid)throw new Error('Local listener ownership is ambiguous.');return found[0].pid;},
     save:item=>store.save(item),
+    update:item=>store.update(item),
     remove:token=>store.remove(token),
     wait:async()=>{const result=await exec('sleep',['0.25'],{timeout:2000});if(result.code!==0)throw new Error('Unable to wait for SSH.');},
     list:()=>store.list(),

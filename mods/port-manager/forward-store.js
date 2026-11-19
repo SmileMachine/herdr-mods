@@ -16,6 +16,7 @@ export function createForwardStore({read,write,path}) {
       if(entries.some(x=>x?.metadata?.machine===item.metadata.machine&&x.metadata.host===item.metadata.host&&x.metadata.remote===item.metadata.remote))throw new Error('A forward for this listener already exists.');
       await write(path,JSON.stringify([...entries,item]),raw);
     },
+    async update(item){const {raw,entries}=await snapshot();const index=entries.findIndex(x=>x?.identity?.token===item.identity.token);if(index<0)throw new Error('Forward intent not found.');entries[index]=item;await write(path,JSON.stringify(entries),raw);},
     async remove(token){const {raw,entries}=await snapshot();await write(path,JSON.stringify(entries.filter(x=>x?.identity?.token!==token)),raw);},
   };
 }

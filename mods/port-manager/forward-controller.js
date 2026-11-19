@@ -14,14 +14,20 @@ export function createForwardController(io) {
     }
     if (await io.portInUse(plan.metadata.local)) throw new Error('The local port is already in use.');
     const argv = [plan.command, ...plan.args];
-    const address = await io.startTerminal(plan.label, argv);
+    // Persist intent before launching. An interrupted launch remains visible and
+    // blocks duplicates rather than becoming an untracked live process.
+    const pending={identity:{token:plan.metadata.token},metadata:plan.metadata,pending:true,argv};
+    await io.save(pending);
+    let address;
+    try { address=await io.startTerminal(plan.label, argv); }
+    catch(e) { return {state:'unknown',reason:'SSH launch could not be confirmed. Check the pending forward.'}; }
     if (!address || address.includes('/')) throw new Error('Unable to identify the local SSH terminal.');
     let terminal;
     try { terminal = await io.getTerminal(address); } catch { return {state:'unknown',address,reason:'Unable to inspect SSH terminal.'}; }
     if (terminal?.state !== 'live') return {state:'failed',address,reason:'SSH exited before forwarding started.'};
     const identity = {address, createdMs:terminal.created_ms, pid:terminal.pid, token:plan.metadata.token, argv};
     if (!matchesForwardIdentity(terminal,identity)) return {state:'unknown',address,reason:'Unable to verify SSH terminal identity.'};
-    try { await io.save({identity,metadata:plan.metadata}); }
+    try { await io.update({identity,metadata:plan.metadata}); }
     catch { return {state:'unknown',address,reason:'Unable to save forward identity; SSH may still be running.'}; }
     for (let i=0;i<io.attempts;i++) {
       let fresh, owner;
