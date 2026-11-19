@@ -30,17 +30,18 @@ export function remoteHost(host) {
   throw new Error('This listener address cannot be forwarded safely.');
 }
 
-export function planForward({machine, host, remotePort, localPort}, machines, token) {
+export function planForward({machine, host, remotePort, localPort, agentSocket}, machines, token) {
   if (!machine || typeof machine !== 'string') throw new Error('Select a remote machine.');
   const targetMachine = machines.find(m => m.name === machine);
   if (!targetMachine || targetMachine.via || typeof targetMachine.target !== 'string' || !targetMachine.target || targetMachine.target.startsWith('-') || /[\s\x00-\x1f]/.test(targetMachine.target))
     throw new Error('This machine does not have a supported SSH target.');
   if (!/^[a-f0-9]{32}$/.test(token ?? '')) throw new Error('Invalid forward identity.');
   const local = parsePort(localPort), remote = parsePort(remotePort), destination = remoteHost(host);
+  if (agentSocket != null && (typeof agentSocket !== 'string' || !agentSocket.startsWith('/') || /[\x00-\x1f]/.test(agentSocket))) throw new Error('Enter an absolute SSH agent socket path.');
   const metadata = {v:1, token, machine, host, remote, local};
   const dest = destination.includes(':') ? `[${destination}]` : destination;
   return {metadata, label:`${FORWARD_LABEL}=${encodeURIComponent(JSON.stringify(metadata))}`, command:'ssh',
-    args:['-N','-o','ControlMaster=no','-o','ControlPath=none','-o','ExitOnForwardFailure=yes','-o','ServerAliveInterval=15','-L',`127.0.0.1:${local}:${dest}:${remote}`,targetMachine.target]};
+    args:['-N','-o','BatchMode=yes',...(agentSocket ? ['-o',`IdentityAgent=${agentSocket}`] : []),'-o','ControlMaster=no','-o','ControlPath=none','-o','ExitOnForwardFailure=yes','-o','ServerAliveInterval=15','-L',`127.0.0.1:${local}:${dest}:${remote}`,targetMachine.target]};
 }
 
 export function parseForwardLabel(value) {

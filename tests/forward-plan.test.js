@@ -22,3 +22,11 @@ test('rejects untrusted targets, invalid ports and unsupported addresses',()=>{
 test('malformed labels do not become managed forwards',()=>{
  for(const text of ['','%','{}',encodeURIComponent(JSON.stringify({v:1,token,machine:'m',host:'*',remote:3000,local:'3000'}))]) assert.equal(parseForwardLabel(text),null);
 });
+
+test('optional explicit agent is passed as one SSH option, never shell-expanded',()=>{
+ const request={machine:'mbp',host:'127.0.0.1',remotePort:3000,localPort:4000};
+ const p=planForward({...request,agentSocket:'/tmp/my socket'},machines,token);
+ assert.ok(p.args.includes('IdentityAgent=/tmp/my socket'));
+ assert.ok(p.args.includes('BatchMode=yes'));
+ for(const agentSocket of ['relative','/tmp/\nconfig']) assert.throws(()=>planForward({...request,agentSocket},machines,token));
+});
