@@ -35,3 +35,18 @@ owned the requested `127.0.0.1` listener. The test terminal was killed and
 removed; its listener disappeared. This did not test end-to-end traffic,
 port races, disconnect, restart recovery, replacement, or agent configuration
 portability. Never assume the observed launchd socket path is stable.
+
+A later controlled probe started a temporary HTTP server on mbp at
+`127.0.0.1:39184` and a labelled local SSH process forwarding
+`127.0.0.1:39183` to it. An HTTP request through the forward returned 200.
+Both test terminals were stopped and removed, and neither test port remained
+listening. This proves the manually invoked SSH data path only; it does not
+exercise the controller or a Herdr GUI adapter.
+
+`forward-controller.js` now models start and stop through injected adapters,
+with unit tests for conflicts, early exit, unknown ownership and changed
+identity. It is not connected to Herdr or installed. Its pre-kill verification
+is best effort because `hc` provides no atomic compare-and-kill operation;
+there remains a time-of-check/time-of-use race. An adapter must not claim
+atomic safety or silently clean up unknown processes. Persisted tokens and
+metadata must not be treated as a security boundary against the same user.
