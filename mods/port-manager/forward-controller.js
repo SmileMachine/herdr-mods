@@ -24,11 +24,11 @@ export function createForwardController(io) {
     if (!address || address.includes('/')) throw new Error('Unable to identify the local SSH terminal.');
     let terminal;
     try { terminal = await io.getTerminal(address); } catch { return {state:'unknown',address,reason:'Unable to inspect SSH terminal.'}; }
-    if (terminal?.state !== 'live') return {state:'failed',address,reason:'SSH exited before forwarding started.'};
     const identity = {address, createdMs:terminal.created_ms, pid:terminal.pid, token:plan.metadata.token, argv};
-    if (!matchesForwardIdentity(terminal,identity)) return {state:'unknown',address,reason:'Unable to verify SSH terminal identity.'};
+    if (!matchesForwardIdentity(terminal,identity,true)) return {state:'unknown',address,reason:'Unable to verify SSH terminal identity.'};
     try { await io.update({identity,metadata:plan.metadata}); }
     catch { return {state:'unknown',address,reason:'Unable to save forward identity; SSH may still be running.'}; }
+    if (terminal.state === 'finished') return {state:'failed',address,reason:'SSH exited before forwarding started. Check SSH authentication and local port availability.'};
     for (let i=0;i<io.attempts;i++) {
       let fresh, owner;
       try { fresh=await io.getTerminal(address); owner=await io.listenerOwner(plan.metadata.local); }
@@ -46,7 +46,7 @@ export function createForwardController(io) {
     try {
       const terminal=await io.getTerminal(identity.address);
       if (terminal?.state !== 'live') {
-        if (!matchesForwardIdentity({...terminal,state:'live'},identity)) return {state:'unknown',reason:'Saved terminal identity changed.'};
+        if (!matchesForwardIdentity(terminal,identity,true)) return {state:'unknown',reason:'Saved terminal identity changed.'};
         return {state:'stopped'};
       }
       const owner=await io.listenerOwner(metadata.local);

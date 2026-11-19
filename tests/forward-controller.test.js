@@ -55,3 +55,14 @@ test('start persists an intent before creating a terminal',async()=>{
  f.io.startTerminal=async(...args)=>{assert.equal(persisted,true);return start(...args)};
  f.owner=40;assert.equal((await f.controller.start(request)).state,'running');
 });
+
+test('early exit saves verified identity so a later retry can replace it',async()=>{
+ const f=fixture();const start=f.io.startTerminal;let first=true;
+ f.io.startTerminal=async(...args)=>{const address=await start(...args);if(first){first=false;f.terminal={...f.terminal,state:'finished'}}return address};
+ assert.equal((await f.controller.start(request)).state,'failed');
+ assert.equal(f.saved.pending,undefined);assert.equal(f.saved.identity.address,'t1');
+ assert.equal((await f.controller.status(f.saved.identity,f.saved.metadata)).state,'stopped');
+ f.io.lookup=async()=>f.saved;f.owner=40;
+ assert.equal((await f.controller.start(request)).state,'running');
+ assert.equal(f.killed,0);
+});
