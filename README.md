@@ -1,7 +1,7 @@
 # Herdr Port Manager
 
-面向 Herdr App 的端口发现、展示筛选和 SSH 转发管理 mod。当前仓库**只有方案，没有实现**。
+Experimental Herdr mod for inspecting TCP listeners in one place. The preview can scan the local computer and machines with open spaces, group listeners by machine, show process details, switch between process-tree and working-directory attribution, and filter the visible list by process name or port. Regex filters use JavaScript regular expressions. Unknown process names or terminal status remain visible when those filters are active.
 
-目标是在独立的 Live Ports 风格面板集中管理端口，借鉴 Space Ports 的进程树归属和转发能力，不要求把端口放进每个 Space 的侧栏。侧栏显示是可选能力。
+The ready-machines option is experimental: it only includes machines already reported as ready by Herdr, not all configured machines without spaces. SSH forwarding, sidebar integration, adjustable refresh intervals and full machine enumeration are not implemented yet. This preview does not create or stop forwards or processes.
 
-设计、默认值提议、待验证项和验收标准见 [docs/design.md](docs/design.md)。当前设计不是对 Herdr API 能力或跨平台兼容性的承诺。
+Run `npm test` for the host-side tests. Run `herdr-app check mods/port-manager` for initial mod rendering; it does not validate later interaction or remote operation. Installation and actual GUI acceptance are separate steps.
