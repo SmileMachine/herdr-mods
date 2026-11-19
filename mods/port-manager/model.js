@@ -69,24 +69,13 @@ export function parsePortRanges(text) {
   });
 }
 
-// Deliberately constrained regex grammar: literals, escapes, character classes,
-// dot and anchors only. Quantifiers, groups, alternation and backreferences can
-// have pathological runtime and are not accepted by this synchronous engine.
+// Use the host JavaScript regex engine; invalid patterns are reported to the UI.
 export function compileNamePattern(text, mode = 'text') {
   if (!text) return null;
-  if (text.length > 128) throw new Error('Pattern is too long');
   if (mode === 'text') { const needle = text.toLowerCase(); return (name) => name.toLowerCase().includes(needle); }
   if (mode !== 'regex') throw new Error('Unknown name mode');
-  let inClass = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '\\') { if (++i >= text.length || /[1-9]/.test(text[i])) throw new Error('Invalid or unsupported escape'); continue; }
-    if (c === '[' && !inClass) { inClass = true; continue; }
-    if (c === ']' && inClass) { inClass = false; continue; }
-    if (!inClass && /[()*+?{}|]/.test(c)) throw new Error('Regex quantifiers, groups and alternation are not supported');
-  }
   let re; try { re = new RegExp(text, 'i'); } catch { throw new Error('Invalid regular expression'); }
-  return (name) => re.test(name.slice(0, 256));
+  return (name) => re.test(name);
 }
 
 export function compileFilter(config = {}) {

@@ -28,9 +28,11 @@ test('port ranges validate inclusively', () => {
   assert.deepEqual(parsePortRanges('80, 3000-3002'),[[80,80],[3000,3002]]);
   for (const v of ['0','65536','9-2','1,','x']) assert.throws(() => parsePortRanges(v));
 });
-test('safe regex subset rejects exponential constructs and invalid input', () => {
-  assert.equal(compileNamePattern('^code.$','regex')('codex'),true);
-  for (const v of ['(a+)+$','a.*','[','\\1','a|b']) assert.throws(() => compileNamePattern(v,'regex'));
+test('regex uses standard JavaScript groups, alternation and quantifiers', () => {
+  const match = compileNamePattern('^(node|python)[0-9]*$', 'regex');
+  assert.equal(match('Node42'), true); assert.equal(match('python'), true);
+  assert.equal(match('node-dev'), false);
+  assert.throws(() => compileNamePattern('[','regex'), /Invalid regular expression/);
 });
 test('filters combine fields without mutating records and retain unknown names', () => {
   const rows=[{name:'codex',port:3000,terminal:'yes'},{name:'node',port:8000,terminal:'no'},{name:null,port:3001,terminal:'unknown'}];
