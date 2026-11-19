@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {managedForwardFor,sameListener} from '../mods/port-manager/forward-match.js';
+import {forwardFeedback} from '../mods/port-manager/forward-feedback.js';
 
 // Exercise the actual GPUI render branch and click callback while cloning the
 // listener like a fresh shared-state snapshot on every render.
@@ -17,7 +18,7 @@ test('clicking a listener forward arrow opens the inline editor after snapshot c
  }});return proxy;}
  let source=readFileSync(new URL('../mods/port-manager/main.js',import.meta.url),'utf8');
  source=source.replace(/^import .*;\s*$/gm,'').replace('export default class PortManager','class PortManager')+'\nthis.PortManager=PortManager;';
- const context={View:class{},div:el,h_flex:el,v_flex:el,svg:el,Input:{new:el},settings:()=>({}),shared:()=>null,managedForwardFor,sameListener};
+ const context={View:class{},div:el,h_flex:el,v_flex:el,svg:el,Input:{new:el},settings:()=>({}),shared:()=>null,managedForwardFor,sameListener,forwardFeedback};
  vm.runInNewContext(source,context);
  const view=new context.PortManager();view.forwardEntries=[];view.forwardStates={};view.forwardRecord=null;
  view.localPort={set_value(value){this.value=value}};

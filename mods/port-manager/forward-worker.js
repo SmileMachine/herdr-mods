@@ -33,15 +33,15 @@ export function createForwardWorker({read,write,controller,adapter}) {
           else { await adapter.remove(item.identity.token); result={state:'removed'}; }
         }
       } else throw new Error('Unsupported forward action.');
-      write({id:command.id,phase:'done',result});
-    } catch(e) {write({id:command.id,phase:'done',result:{state:'error',reason:String(e?.message??e)}});}
+      write({...command,phase:'done',result});
+    } catch(e) {write({...command,phase:'done',result:{state:'error',reason:String(e?.message??e)}});}
     finally {busy=false;}
     return true;
   }
   function interrupt() {
     const command=read();
     if(command && (command.phase==='queued'||command.phase==='running'))
-      write({id:command.id,phase:'done',result:{state:'unknown',reason:'Operation interrupted. Check managed forwards before retrying.'}});
+      write({...command,phase:'done',result:{state:'unknown',reason:'Operation interrupted. Check managed forwards before retrying.'}});
   }
   return {execute,interrupt};
 }

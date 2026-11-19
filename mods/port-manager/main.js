@@ -9,6 +9,7 @@ import { applyDrafts, validateDrafts } from './filter-state.js';
 import {createForwardRuntime} from './forward-runtime.js';
 import {createForwardWorker} from './forward-worker.js';
 import {managedForwardFor, sameListener} from './forward-match.js';
+import {forwardFeedback} from './forward-feedback.js';
 
 const PREF='port-manager.preferences', DATA='port-manager.snapshots', FORWARD_CMD='port-manager.forward-command';
 const defaults={strategy:'process',name:'',nameMode:'text',nameAction:'exclude',ports:'',portAction:'include',includeUnattached:false};
@@ -85,7 +86,6 @@ export default class PortManager extends View {
   const groups=groupPorts(all,spaces(),p.strategy,filter);
   const command=shared(FORWARD_CMD);
   const operationBusy=command?.phase==='queued'||command?.phase==='running';
-  const operationMessage=operationBusy?'Working…':command?.phase==='done'&&command.id===this.ownForwardCommand?(command.result?.reason??(command.result?.state==='running'?'Forward started.':command.result?.state==='stopped'?'Forward stopped.':`Forward status: ${command.result?.state}`)):'';
   return v_flex().w_full().h(props()?.height ?? 600).bg(t.popover).text_color(t.foreground).text_size(13)
    .on_key_down((e,cx)=>{if(e.key==='escape'){closeOverlay(props().overlay);cx.stop_propagation();}})
    .child(h_flex().h(40).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border).child(div().font_medium().child('Ports')).child(div().text_size(12).text_color(t.muted).child(`${shown.length} / ${records.length}`)).child(div().flex_1()).child(this.button('pm-filters','Filters',cx=>{this.panel=this.panel==='filters'?null:'filters';this.forwardRecord=null;cx.notify();},t,this.panel==='filters')).child(this.button('pm-forwards','Forwards',cx=>{this.panel=this.panel==='forwards'?null:'forwards';this.forwardRecord=null;if(this.panel)this.refreshForwards(cx);cx.notify();},t,this.panel==='forwards')).child(this.button('pm-settings','Settings',cx=>{this.panel=this.panel==='settings'?null:'settings';this.forwardRecord=null;cx.notify();},t,this.panel==='settings')))
@@ -119,20 +119,22 @@ export default class PortManager extends View {
     .child(h_flex().items_center().child(div().flex_1().font_medium().child('Managed forwards')).child(this.iconButton('pm-refresh-forwards','refresh','Refresh forwards',cx=>this.refreshForwards(cx),t)))
     .children(this.forwardEntries.map((item,i)=>{
      const status=this.forwardStates[item.identity.token]??{state:'checking'},state=status.state;
-     const edit=(cx)=>{this.forwardRecord={...item.metadata,token:item.identity.token,port:item.metadata.remote,editorSource:'panel'};this.localPort.set_value(String(item.metadata.local));this.forwardMessage='';cx.notify();};
+     const edit=(cx)=>{this.clearForwardError();this.forwardRecord={...item.metadata,token:item.identity.token,port:item.metadata.remote,editorSource:'panel'};this.localPort.set_value(String(item.metadata.local));this.forwardMessage='';cx.notify();};
+     const feedback=forwardFeedback(command,{token:item.identity.token,machine:item.metadata.machine,host:item.metadata.host,port:item.metadata.remote});
      const editing=this.forwardRecord?.editorSource==='panel'&&(this.forwardRecord.token??this.forwardRecord.entryToken)===item.identity.token;
      return v_flex().id(`pm-forward-${i}`).gap(2)
       .child(h_flex().gap(4).items_center()
-       .child(div().flex_1().min_w(0).truncate().child(`${item.metadata.machine}:${item.metadata.remote} → localhost:${item.metadata.local} · ${state}`))
+       .child(div().flex_1().min_w(0).truncate().child(`${item.metadata.machine}:${item.metadata.remote} → localhost:${item.metadata.local} · ${feedback?.kind==='progress'?feedback.text:state}`))
        .when(editing,e=>e.child(this.forwardEditor(`panel-${i}`,t,operationBusy)))
        .when(!editing&&state!=='stopped'&&state!=='checking'&&item.identity?.address,e=>e.child(this.iconButton(`pm-edit-${i}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-stop-${i}`,'stop','Stop forward',cx=>this.forwardAction({action:'stop',token:item.identity.token},cx),t)))
-       .when(!editing&&state==='stopped',e=>e.child(this.iconButton(`pm-edit-${i}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-retry-${i}`,'play','Start forward',cx=>{this.forwardRecord={...item.metadata,port:item.metadata.remote,editorSource:'panel',entryToken:item.identity.token};this.localPort.set_value(String(item.metadata.local));this.forwardMessage='';cx.notify();},t)).child(this.iconButton(`pm-remove-${i}`,'trash','Remove stopped forward',cx=>this.forwardAction({action:'remove',token:item.identity.token},cx),t))))
-      .when(state==='unknown',e=>e.child(div().text_color(t.muted).child(`${status.reason??'Unable to verify this forward.'}${item.identity.address?` Terminal: ${item.identity.address}.`:''}`)));
+       .when(!editing&&state==='stopped',e=>e.child(this.iconButton(`pm-edit-${i}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-retry-${i}`,'play','Start forward',cx=>{this.clearForwardError();this.forwardRecord={...item.metadata,port:item.metadata.remote,editorSource:'panel',entryToken:item.identity.token};this.localPort.set_value(String(item.metadata.local));this.forwardMessage='';cx.notify();},t)).child(this.iconButton(`pm-remove-${i}`,'trash','Remove stopped forward',cx=>this.forwardAction({action:'remove',token:item.identity.token},cx),t))))
+      .when(feedback?.kind==='error',e=>e.child(div().text_color(t.ansi1).child(feedback.text)))
+      .when(state==='unknown'&&!feedback,e=>e.child(div().text_color(t.muted).child(`${status.reason??'Unable to verify this forward.'}${item.identity.address?` Terminal: ${item.identity.address}.`:''}`)));
     }))
     .when(!this.forwardEntries.length,e=>e.child(div().text_color(t.muted).child('No managed forwards.')))
-    .when(Boolean(this.forwardMessage||operationMessage),e=>e.child(div().text_color(t.muted).child(this.forwardMessage||operationMessage)))
+    .when(Boolean(this.forwardMessage),e=>e.child(div().text_color(t.muted).child(this.forwardMessage)))
    ))
-   .when(this.panel!=='forwards'&&Boolean(this.forwardMessage||operationMessage),el=>el.child(div().px(14).py(5).text_size(12).text_color(t.muted).child(this.forwardMessage||operationMessage)))
+   .when(this.panel!=='forwards'&&Boolean(this.forwardMessage),el=>el.child(div().px(14).py(5).text_size(12).text_color(t.muted).child(this.forwardMessage)))
    .when(!all.length,el=>el.child(div().px(14).py(10).text_size(12).text_color(t.dim).child('Scanning listeners…')))
    .when(all.length>0 && !records.length,el=>el.child(div().px(14).py(10).text_size(12).text_color(t.dim).child('No listeners found. Check machine errors below.')))
    .when(records.length>0 && !shown.length,el=>el.child(div().px(14).py(10).text_size(12).text_color(t.dim).child('No ports match the current filters.')))
@@ -161,29 +163,35 @@ export default class PortManager extends View {
      return [heading,...(collapsible&&!expanded?[]:group.records.map((entry,j)=>this.portRow(entry,`other-${i}-${j}`,t)))];
     })));
  }
+ clearForwardError(){
+  const c=shared(FORWARD_CMD);if(c?.phase==='done'&&['error','failed','unknown'].includes(c.result?.state))setShared(FORWARD_CMD,null);
+ }
  forwardEditor(id,t,operationBusy){
   return h_flex().gap(3).items_center().flex_none()
    .child(Input.new(this.localPort).w(90).h(30).px(8).rounded(5).border_1().border_color(t.input).bg(t.background).accessibility_label('Local port'))
    .child(this.iconButton(`pm-save-forward-${id}`,this.forwardRecord?.token?'save':'play',operationBusy?'Working…':(this.forwardRecord?.token?'Save forward':'Start forward'),cx=>{const record=this.forwardRecord;this.forwardAction({action:record.token?'edit':'start',token:record.token,request:{machine:record.machine,host:record.host,remotePort:record.port,localPort:this.localPort.value(),agentSocket:preferences().agentSocket?.trim()||undefined}},cx);},t))
-   .child(this.iconButton(`pm-cancel-forward-${id}`,'close','Cancel',cx=>{if(!operationBusy){this.forwardRecord=null;this.forwardMessage='';cx.notify();}},t));
+   .child(this.iconButton(`pm-cancel-forward-${id}`,'close','Cancel',cx=>{if(!operationBusy){this.forwardRecord=null;this.forwardMessage='';this.clearForwardError();cx.notify();}},t));
  }
  portRow({record:r,stale},id,t){
   const managed=managedForwardFor(r,this.forwardEntries);
   const state=managed?this.forwardStates[managed.identity.token]?.state:'none';
   const command=shared(FORWARD_CMD), operationBusy=command?.phase==='queued'||command?.phase==='running';
+  const feedback=forwardFeedback(command,{token:managed?.identity?.token,machine:r.machine,host:r.host,port:r.port});
   const editing=Boolean(this.forwardRecord)&&this.forwardRecord.editorSource!=='panel'&&(!this.forwardRecord.token
     ? sameListener(this.forwardRecord,r)
     : managed?.identity?.token===this.forwardRecord.token);
-  const edit=(cx)=>{this.forwardRecord={...managed.metadata,token:managed.identity.token,port:managed.metadata.remote};this.localPort.set_value(String(managed.metadata.local));this.panel=null;this.forwardMessage='';cx.notify();};
-  return h_flex().id(`pm-row-${id}`).h(54).flex_none().px(14).pt(9).gap(14).items_start().border_b(1).border_color(t.border).hover(s=>s.bg(t.hover))
-   .child(div().w(56).flex_none().font_family(settings().font_family ?? 'JetBrains Mono').font_bold().child(String(r.port)))
+  const edit=(cx)=>{this.clearForwardError();this.forwardRecord={...managed.metadata,token:managed.identity.token,port:managed.metadata.remote};this.localPort.set_value(String(managed.metadata.local));this.panel=null;this.forwardMessage='';cx.notify();};
+  return v_flex().id(`pm-row-${id}`).flex_none().border_b(1).border_color(t.border).hover(s=>s.bg(t.hover))
+   .child(h_flex().h(53).px(14).gap(14).items_center()
+   .child(div().w(56).flex_none().self_start().pt(9).font_family(settings().font_family ?? 'JetBrains Mono').font_bold().child(String(r.port)))
    .child(v_flex().flex_1().min_w(0).gap(2).child(div().truncate().text_color(t.muted).child(`${r.name??'Unknown process'}${r.pid?` · ${r.pid}`:''}`))
-    .child(div().truncate().text_size(12).text_color(t.dim).child(`${r.host}${stale?' · Stale':''}`)))
+    .child(div().truncate().text_size(12).text_color(t.dim).child(feedback?.kind==='progress'?feedback.text:`${r.host}${stale?' · Stale':''}`)))
    .when(editing,el=>el.child(this.forwardEditor(id,t,operationBusy)))
-   .when(!editing&&Boolean(r.machine)&&!stale&&!managed,el=>el.child(this.iconButton(`pm-forward-action-${id}`,'forward','Forward port',cx=>{this.forwardRecord=r;this.localPort.set_value(String(r.port));this.panel=null;this.forwardMessage='';cx.notify();},t)))
+   .when(!editing&&Boolean(r.machine)&&!stale&&!managed,el=>el.child(this.iconButton(`pm-forward-action-${id}`,'forward','Forward port',cx=>{this.clearForwardError();this.forwardRecord=r;this.localPort.set_value(String(r.port));this.panel=null;this.forwardMessage='';cx.notify();},t)))
    .when(!editing&&Boolean(r.machine)&&!stale&&managed,el=>el.child(h_flex().gap(2).items_center()
     .child(div().max_w(120).truncate().text_size(12).text_color(t.muted).tooltip(`Forwarded to localhost:${managed.metadata.local}`).child(`→ localhost:${managed.metadata.local}`))
     .when(state!=='stopped'&&state!=='checking'&&managed.identity?.address,e=>e.child(this.iconButton(`pm-edit-forward-${id}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-stop-forward-${id}`,'stop','Stop forward',cx=>this.forwardAction({action:'stop',token:managed.identity.token},cx),t)))
-    .when(state==='stopped',e=>e.child(this.iconButton(`pm-edit-forward-${id}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-remove-forward-${id}`,'trash','Remove stopped forward',cx=>this.forwardAction({action:'remove',token:managed.identity.token},cx),t)))));
+    .when(state==='stopped',e=>e.child(this.iconButton(`pm-edit-forward-${id}`,'edit','Edit forward',edit,t)).child(this.iconButton(`pm-remove-forward-${id}`,'trash','Remove stopped forward',cx=>this.forwardAction({action:'remove',token:managed.identity.token},cx),t))))))
+   .when(feedback?.kind==='error',el=>el.child(div().px(14).pb(8).text_size(12).text_color(t.ansi1).child(feedback?.text??'')));
  }
 }

@@ -46,3 +46,10 @@ test('edit can restart a stopped record without trying to stop it again',async()
  const worker=createForwardWorker({read:()=>value,write:v=>{value=v},controller:{status:async()=>({state:'stopped'}),stop:async()=>{calls.push('stop');return {state:'stopped'}},start:async req=>{calls.push(['start',req]);return {state:'running'}}},adapter:{list:async()=>[{identity:{token:'old'},metadata:{local:4001}}]}});
  await worker.execute();assert.deepEqual(calls,[['start',{localPort:4002}]]);assert.equal(value.result.state,'running');
 });
+
+test('worker retains action and target on completion and interruption',async()=>{
+ let value={id:'retain',phase:'queued',action:'start',request:{machine:'mbp',host:'*',remotePort:3000}};
+ const worker=createForwardWorker({read:()=>value,write:v=>{value=v},controller:{start:async()=>({state:'failed',reason:'SSH exited.'})},adapter:{}});
+ await worker.execute();assert.equal(value.action,'start');assert.equal(value.request.remotePort,3000);
+ value={...value,phase:'running'};worker.interrupt();assert.equal(value.action,'start');assert.equal(value.request.machine,'mbp');
+});
