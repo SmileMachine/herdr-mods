@@ -30,3 +30,12 @@ test('optional explicit agent is passed as one SSH option, never shell-expanded'
  assert.ok(p.args.includes('BatchMode=yes'));
  for(const agentSocket of ['relative','/tmp/\nconfig']) assert.throws(()=>planForward({...request,agentSocket},machines,token));
 });
+
+test('managed forwarding matches equivalent wildcard listener spellings',async()=>{
+ const {matchesForwardListener,managedForwardFor}=await import('../mods/port-manager/forward-match.js');
+ const record={machine:'mbp',host:'0.0.0.0',port:3000};
+ const entry={identity:{token:'x'},metadata:{machine:'mbp',host:'*',remote:3000,local:4000}};
+ assert.equal(matchesForwardListener(record,entry.metadata),true);
+ assert.equal(managedForwardFor(record,[entry]),entry);
+ assert.equal(matchesForwardListener({...record,machine:'other'},entry.metadata),false);
+});
