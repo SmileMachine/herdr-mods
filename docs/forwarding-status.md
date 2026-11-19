@@ -1,8 +1,11 @@
 # SSH forwarding implementation status
 
-The GUI does not expose forwarding yet. No code in the current plan and ownership
-modules starts or stops a process. These modules are groundwork, not proof that
-forwarding or recovery is safe.
+The experimental GUI submits start and stop requests to a status-bar worker.
+Managed state is stored in a shared compare-and-swap file, with launch intent
+saved before SSH starts. Unknown ownership fails closed; an interrupted launch
+can leave a pending record that requires manual investigation. Closing the popup
+is not intended to cancel the worker, but actual host behavior still needs GUI
+validation. Local port changes currently require stop and start.
 
 - `forward-plan.js` validates port numbers and SSH targets, rejects `--via`
   command-based machines, and creates an argv-based loopback-only SSH plan.
@@ -45,9 +48,9 @@ exercise the controller or a Herdr GUI adapter.
 
 `forward-controller.js` now models start, status and stop through injected adapters,
 with unit tests for conflicts, early exit, unknown ownership and changed
-identity. It is not connected to Herdr or installed. Its pre-kill verification
+identity. It is connected to a Herdr adapter and worker. Its pre-kill verification
 is best effort because `hc` provides no atomic compare-and-kill operation;
-there remains a time-of-check/time-of-use race. An adapter must not claim
+there remains a time-of-check/time-of-use race. The adapter must not claim
 atomic safety or silently clean up unknown processes. Persisted tokens and
 metadata must not be treated as a security boundary against the same user.
 

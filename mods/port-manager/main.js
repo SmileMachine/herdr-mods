@@ -6,21 +6,25 @@ import { scanAll } from './runtime.js';
 import { snapshotsChanged } from './discovery.js';
 import { groupPorts } from './groups.js';
 import { applyDrafts, validateDrafts } from './filter-state.js';
+import {createForwardRuntime} from './forward-runtime.js';
+import {createForwardWorker} from './forward-worker.js';
 
-const PREF='port-manager.preferences', DATA='port-manager.snapshots';
+const PREF='port-manager.preferences', DATA='port-manager.snapshots', FORWARD_CMD='port-manager.forward-command';
 const defaults={strategy:'process',name:'',nameMode:'text',nameAction:'exclude',ports:'',portAction:'include',includeUnattached:false};
 const preferences=()=>({...defaults,...(shared(PREF)??{})});
 const snapshots=()=>shared(DATA)??[];
 export default class PortManager extends View {
  init(_p,cx) {
-  this.popup=props()?.view==='popup' || Boolean(props()?.overlay); this.errors={}; this.busy=false; this.panel=null; this.expandedProcesses=new Set();
+  this.popup=props()?.view==='popup' || Boolean(props()?.overlay); this.errors={}; this.busy=false; this.panel=null; this.expandedProcesses=new Set(); this.forwardRecord=null; this.forwardMessage=''; this.forwardStates={}; this.forwardEntries=[]; this.forwardRuntime=createForwardRuntime(); this.lastForwardCommand=null; this.forwardRefreshBusy=false;
   if (this.popup) {
-   const p=preferences(); this.name=InputState.new({value:p.name,placeholder:'e.g. node'}); this.ports=InputState.new({value:p.ports,placeholder:'e.g. 3000, 8000-8999'});
+   const p=preferences(); this.name=InputState.new({value:p.name,placeholder:'e.g. node'}); this.ports=InputState.new({value:p.ports,placeholder:'e.g. 3000, 8000-8999'}); this.localPort=InputState.new({placeholder:'Local port'}); this.agentSocket=InputState.new({value:p.agentSocket??'',placeholder:'Optional absolute path'});
    const changed=(_e,cx)=>{const result=applyDrafts(preferences(),this.name.value(),this.ports.value());this.errors=result.errors;setShared(PREF,result.next);cx.notify();};
-   this.name.on('change',changed); this.ports.on('change',changed); return;
+   this.name.on('change',changed); this.ports.on('change',changed); cx.timer.every(500,cx=>{const c=shared(FORWARD_CMD),key=c?`${c.id}:${c.phase}`:'';if(key!==this.lastForwardCommand){this.lastForwardCommand=key;if(c?.phase==='done'){if(c.id===this.ownForwardCommand&&c.result?.state==='running'){this.forwardRecord=null;this.panel='forwards';}this.refreshForwards(cx);}cx.notify();}}); this.agentSocket.on('change',(_e,cx)=>{setShared(PREF,{...preferences(),agentSocket:this.agentSocket.value()});cx.notify();}); if(!checking())this.refreshForwards(cx); return;
   }
   if(checking()) return;
+  this.worker=createForwardWorker({read:()=>shared(FORWARD_CMD),write:value=>setShared(FORWARD_CMD,value),...this.forwardRuntime});this.worker.interrupt();
   this.scan(cx); cx.timer.every(5000,cx=>{if(window()?.active)this.scan(cx);});
+  cx.timer.every(300,cx=>{cx.spawn(async cx=>{await this.worker.execute();});});
  }
  scan(cx) {
   if(this.busy)return; this.busy=true;
@@ -58,14 +62,26 @@ export default class PortManager extends View {
     .child(div().size(12).rounded_full().bg(value?t.foreground:t.muted)))
    .child(div().child(label));
  }
+ refreshForwards(cx){
+  if(this.forwardRefreshBusy)return;this.forwardRefreshBusy=true;
+  cx.spawn(async cx=>{try {const list=await this.forwardRuntime.adapter.list();const states={};for(const entry of list)states[entry.identity.token]=entry.pending?{state:'unknown',reason:'The SSH launch could not be confirmed. Check Herdr terminals before retrying.'}:await this.forwardRuntime.controller.status(entry.identity,entry.metadata);this.forwardEntries=list;this.forwardStates=states;}catch(e){this.forwardMessage=`Unable to read forwards: ${e.message??e}`;}finally{this.forwardRefreshBusy=false;cx.notify();}});
+ }
+ forwardAction(command,cx){
+  const active=shared(FORWARD_CMD);
+  if(active?.phase==='queued'||active?.phase==='running'){this.forwardMessage='Another forward operation is in progress.';cx.notify();return;}
+  const id=`${Date.now()}-${Math.random()}`;this.ownForwardCommand=id;setShared(FORWARD_CMD,{...command,id,phase:'queued'});this.forwardMessage='';cx.notify();
+ }
  render(cx){
   const t=theme(),p=preferences(),all=snapshots(),records=all.flatMap(x=>x.records),filter=compileFilter(p),shown=records.filter(filter);
   if(!this.popup) return h_flex().size_full().justify_end().items_center().bg(t.chrome).border_t(1).border_color(t.border)
    .child(this.button('pm-open',`Ports ${shown.length}`,()=>{const v=globalThis.window?.viewport_size?.(),z=settings().zoom??1;openOverlay({mod:'port-manager',kind:'popup',at:v?{x:Math.max(0,v.width-490*z),y:Math.max(0,v.height-630*z)}:'pointer',width:480,height:600,props:{view:'popup',height:600}});},t));
   const groups=groupPorts(all,spaces(),p.strategy,filter);
+  const command=shared(FORWARD_CMD);
+  const operationBusy=command?.phase==='queued'||command?.phase==='running';
+  const operationMessage=operationBusy?'Working…':command?.phase==='done'&&command.id===this.ownForwardCommand?(command.result?.reason??(command.result?.state==='running'?'Forward started.':command.result?.state==='stopped'?'Forward stopped.':`Forward status: ${command.result?.state}`)):'';
   return v_flex().w_full().h(props()?.height ?? 600).bg(t.popover).text_color(t.foreground).text_size(13)
    .on_key_down((e,cx)=>{if(e.key==='escape'){closeOverlay(props().overlay);cx.stop_propagation();}})
-   .child(h_flex().h(40).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border).child(div().font_medium().child('Ports')).child(div().text_size(12).text_color(t.muted).child(`${shown.length} / ${records.length}`)).child(div().flex_1()).child(this.button('pm-filters','Filters',cx=>{this.panel=this.panel==='filters'?null:'filters';cx.notify();},t,this.panel==='filters')).child(this.button('pm-settings','Settings',cx=>{this.panel=this.panel==='settings'?null:'settings';cx.notify();},t,this.panel==='settings')))
+   .child(h_flex().h(40).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border).child(div().font_medium().child('Ports')).child(div().text_size(12).text_color(t.muted).child(`${shown.length} / ${records.length}`)).child(div().flex_1()).child(this.button('pm-filters','Filters',cx=>{this.panel=this.panel==='filters'?null:'filters';this.forwardRecord=null;cx.notify();},t,this.panel==='filters')).child(this.button('pm-forwards','Forwards',cx=>{this.panel=this.panel==='forwards'?null:'forwards';this.forwardRecord=null;if(this.panel)this.refreshForwards(cx);cx.notify();},t,this.panel==='forwards')).child(this.button('pm-settings','Settings',cx=>{this.panel=this.panel==='settings'?null:'settings';this.forwardRecord=null;cx.notify();},t,this.panel==='settings')))
    .when(this.panel==='filters',el=>el.child(v_flex().id('pm-filter-panel').flex_none().px(14).py(10).gap(10).border_b(1).border_color(t.border).text_size(12)
     .child(v_flex().gap(4)
      .child(div().font_medium().child('Process name'))
@@ -88,6 +104,30 @@ export default class PortManager extends View {
     .child(v_flex().gap(5).child(div().font_medium().child('Machines'))
      .child(this.switchControl('unattached','Scan ready machines without spaces',p.includeUnattached,(value,cx)=>this.set('includeUnattached',value,cx),t))
      .child(div().text_color(t.muted).child('Only machines already connected to Herdr are scanned.')))
+    .child(v_flex().gap(4).child(div().font_medium().child('SSH agent socket'))
+     .child(Input.new(this.agentSocket).w_full().h(30).px(8).rounded(5).border_1().border_color(t.input).bg(t.background).accessibility_label('SSH agent socket path'))
+     .child(div().text_color(t.muted).child('Leave empty to use the SSH environment or configuration.')))
+   ))
+   .when(this.panel==='forwards',el=>el.child(v_flex().id('pm-forward-panel').flex_none().px(14).py(10).gap(6).border_b(1).border_color(t.border).text_size(12)
+    .child(h_flex().items_center().child(div().flex_1().font_medium().child('Managed forwards')).child(this.button('pm-refresh-forwards','Refresh',cx=>this.refreshForwards(cx),t)))
+    .child(v_flex().max_h(180).overflow_y_scrollbar().gap(6).children(this.forwardEntries.map((item,i)=>{
+     const status=this.forwardStates[item.identity.token]??{state:'checking'},state=status.state;
+     return v_flex().id(`pm-forward-${i}`).gap(2)
+      .child(h_flex().gap(8).items_center()
+       .child(div().flex_1().min_w(0).truncate().child(`${item.metadata.machine}:${item.metadata.remote} → localhost:${item.metadata.local} · ${state}`))
+       .when(state==='running',e=>e.child(this.button(`pm-stop-${i}`,'Stop',cx=>this.forwardAction({action:'stop',token:item.identity.token},cx),t)))
+       .when(state==='stopped',e=>e.child(this.button(`pm-retry-${i}`,'Start again',cx=>{this.forwardRecord={machine:item.metadata.machine,host:item.metadata.host,port:item.metadata.remote};this.localPort.set_value(String(item.metadata.local));this.panel=null;this.forwardMessage='';cx.notify();},t))))
+      .when(state==='unknown',e=>e.child(div().text_color(t.muted).child(`${status.reason??'Unable to verify this forward.'}${item.identity.address?` Terminal: ${item.identity.address}.`:''}`)));
+    })))
+    .when(!this.forwardEntries.length,e=>e.child(div().text_color(t.muted).child('No managed forwards.')))
+    .when(Boolean(this.forwardMessage||operationMessage),e=>e.child(div().text_color(t.muted).child(this.forwardMessage||operationMessage)))
+   ))
+   .when(Boolean(this.forwardRecord),el=>el.child(v_flex().flex_none().px(14).py(10).gap(6).border_b(1).border_color(t.border).text_size(12)
+    .child(div().font_medium().child(`Forward ${this.forwardRecord?.machine}:${this.forwardRecord?.port}`))
+    .child(h_flex().gap(8).items_center().child(Input.new(this.localPort).w(120).h(30).px(8).rounded(5).border_1().border_color(t.input).bg(t.background).accessibility_label('Local port'))
+     .child(this.button('pm-start-forward',operationBusy?'Starting…':'Start forward',cx=>{const r=this.forwardRecord;this.forwardAction({action:'start',request:{machine:r.machine,host:r.host,remotePort:r.port,localPort:this.localPort.value(),agentSocket:preferences().agentSocket?.trim()||undefined}},cx);},t))
+     .child(this.button('pm-cancel-forward','Cancel',cx=>{if(!operationBusy){this.forwardRecord=null;cx.notify();}},t)))
+    .when(Boolean(this.forwardMessage||operationMessage),e=>e.child(div().text_color(t.muted).child(this.forwardMessage||operationMessage)))
    ))
    .when(!all.length,el=>el.child(div().px(14).py(10).text_size(12).text_color(t.dim).child('Scanning listeners…')))
    .when(all.length>0 && !records.length,el=>el.child(div().px(14).py(10).text_size(12).text_color(t.dim).child('No listeners found. Check machine errors below.')))
@@ -121,6 +161,7 @@ export default class PortManager extends View {
   return h_flex().id(`pm-row-${id}`).h(54).flex_none().px(14).pt(9).gap(14).items_start().border_b(1).border_color(t.border).hover(s=>s.bg(t.hover))
    .child(div().w(56).flex_none().font_family(settings().font_family ?? 'JetBrains Mono').font_bold().child(String(r.port)))
    .child(v_flex().flex_1().min_w(0).gap(2).child(div().truncate().text_color(t.muted).child(`${r.name??'Unknown process'}${r.pid?` · ${r.pid}`:''}`))
-    .child(div().truncate().text_size(12).text_color(t.dim).child(`${r.host}${stale?' · Stale':''}`)));
+    .child(div().truncate().text_size(12).text_color(t.dim).child(`${r.host}${stale?' · Stale':''}`)))
+   .when(Boolean(r.machine)&&!stale,el=>el.child(this.button(`pm-forward-action-${id}`,'Forward',cx=>{this.forwardRecord=r;this.localPort.set_value(String(r.port));this.panel=null;this.forwardMessage='';cx.notify();},t)));
  }
 }
