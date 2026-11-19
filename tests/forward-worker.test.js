@@ -16,3 +16,10 @@ test('stop resolves saved identity on worker side',async()=>{
  const worker=createForwardWorker({read:()=>value,write:v=>{value=v},controller:{stop:async(a,b)=>{seen=[a,b];return {state:'stopped'}}},adapter:{list:async()=>[{identity:{token:'x'},metadata:{local:123}}]}});
  await worker.execute();assert.equal(value.result.state,'stopped');assert.equal(seen[1].local,123);
 });
+test('closing a UI observer does not cancel work owned by the worker',async()=>{
+ let shared={id:'4',phase:'queued',action:'start',request:{}},release;
+ const worker=createForwardWorker({read:()=>shared,write:v=>{shared=v},controller:{start:async()=>new Promise(r=>{release=r})},adapter:{}});
+ const task=worker.execute();const initialObserver=shared.phase;assert.equal(initialObserver,'running');
+ // The observer is discarded; only the persistent owner holds the task.
+ release({state:'running'});await task;assert.equal(shared.phase,'done');assert.equal(shared.result.state,'running');
+});
