@@ -13,3 +13,12 @@ test('requires live local labeled terminal, ssh ancestry, and exact loopback lis
  assert.equal(inspectForward({...term,address:'m/t1'},table,[]),null);
  assert.equal(inspectForward({...term,pid:null},table,[]).state,'unknown');
 });
+
+test('terminal identity requires fresh creation time, PID, token and exact argv',async()=>{
+ const {matchesForwardIdentity}=await import('../mods/port-manager/forward-ownership.js');
+ const full={...term,created_ms:123,argv:['ssh','-N','target']};
+ const expected={address:'t1',createdMs:123,pid:10,token:plan.metadata.token,argv:['ssh','-N','target']};
+ assert.equal(matchesForwardIdentity(full,expected),true);
+ for (const changed of [{pid:11},{created_ms:124},{state:'finished'},{argv:['ssh','-N','other']},{labels:{}},{address:'t2'}])
+  assert.equal(matchesForwardIdentity({...full,...changed},expected),false);
+});

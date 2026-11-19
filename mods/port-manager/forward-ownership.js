@@ -22,3 +22,15 @@ export function inspectForward(terminal, processTable, listeners) {
   }
   return {meta,address:terminal.address,state:'unknown'};
 }
+
+// Check the immutable creation data returned by hc get against locally retained
+// creation evidence and the exact launch plan. Caller must obtain fresh data.
+export function matchesForwardIdentity(terminal, expected) {
+  if (!terminal || !expected || terminal.address !== expected.address || terminal.state !== 'live') return false;
+  if (!Number.isSafeInteger(expected.createdMs) || terminal.created_ms !== expected.createdMs ||
+      !Number.isSafeInteger(expected.pid) || terminal.pid !== expected.pid) return false;
+  const meta = parseForwardLabel(terminal.labels?.[FORWARD_LABEL]);
+  if (!meta || meta.token !== expected.token) return false;
+  return Array.isArray(terminal.argv) && Array.isArray(expected.argv) &&
+    terminal.argv.length === expected.argv.length && terminal.argv.every((arg, i) => arg === expected.argv[i]);
+}
