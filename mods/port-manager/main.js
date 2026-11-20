@@ -19,7 +19,7 @@ const preferences=()=>({...defaults,...(shared(PREF)??{})});
 const snapshots=()=>shared(DATA)??[];
 export default class PortManager extends View {
  init(_p,cx) {
-  this.popup=props()?.view==='popup' || Boolean(props()?.overlay); this.errors={}; this.busy=false; this.panel=null; this.expandedProcesses=new Set(); this.forwardRecord=null; this.forwardMessage=''; this.forwardStates={}; this.forwardEntries=[]; this.forwardRuntime=createForwardRuntime(); this.lastForwardCommand=null; this.forwardRefreshBusy=false;
+  this.popup=props()?.view==='popup' || Boolean(props()?.overlay); this.errors={}; this.busy=false; this.panel=null; this.advancedOpen=false; this.groupOverrides=new Map(); this.forwardRecord=null; this.forwardMessage=''; this.forwardStates={}; this.forwardEntries=[]; this.forwardRuntime=createForwardRuntime(); this.lastForwardCommand=null; this.forwardRefreshBusy=false;
   if (this.popup) {
    const p=preferences(); this.errors=validateDrafts(p.name,p.ports,p.nameMode); this.name=InputState.new({value:p.name,placeholder:'e.g. node'}); this.ports=InputState.new({value:p.ports,placeholder:'e.g. 3000, 8000-8999'}); this.localPort=InputState.new({placeholder:'Local port'}); this.agentSocket=InputState.new({value:p.agentSocket??'',placeholder:'Optional absolute path'});
    const changed=(_e,cx)=>{const result=applyDrafts(preferences(),this.name.value(),this.ports.value());this.errors=result.errors;setShared(PREF,result.next);cx.notify();};
@@ -120,14 +120,23 @@ export default class PortManager extends View {
    .when(this.panel==='settings',el=>el.child(v_flex().id('pm-settings-panel').flex_none().px(14).py(10).gap(12).border_b(1).border_color(t.border).text_size(12)
     .child(v_flex().gap(5).child(div().font_medium().child('Space attribution'))
      .child(this.choices('strategy','Space attribution',[ ['process','Process tree'],['cwd','Working directory']],p.strategy,(v,cx)=>this.set('strategy',v,cx),t)))
-    .child(v_flex().gap(5).child(div().font_medium().child('Scan interval'))
-     .child(this.choices('scan-interval','Scan interval',[ [5,'5 s'],[10,'10 s'],[30,'30 s'],[60,'1 min']],p.scanSeconds,(value,cx)=>this.set('scanSeconds',value,cx),t)))
     .child(v_flex().gap(5).child(div().font_medium().child('Machines'))
      .child(this.switchControl('unattached','Scan ready machines without spaces',p.includeUnattached,(value,cx)=>this.set('includeUnattached',value,cx),t))
      .child(div().text_color(t.muted).child('Only machines already connected to Herdr are scanned.')))
-    .child(v_flex().gap(4).child(div().font_medium().child('SSH agent socket'))
-     .child(Input.new(this.agentSocket).w_full().h(30).px(8).rounded(5).border_1().border_color(t.input).bg(t.background).accessibility_label('SSH agent socket path'))
-     .child(div().text_color(t.muted).child('Leave empty to use the SSH environment or configuration.')))
+    .child(h_flex().id('pm-advanced-toggle').gap(6).items_center().cursor_pointer().rounded(5).text_color(t.muted)
+     .tooltip(this.advancedOpen?'Hide advanced settings':'Show advanced settings')
+     .accessibility_label(`Advanced settings (${this.advancedOpen?'expanded':'collapsed'})`).tab_index(0)
+     .hover(s=>s.text_color(t.foreground)).focus(s=>s.text_color(t.foreground))
+     .on_click((_e,cx)=>{this.advancedOpen=!this.advancedOpen;cx.notify();})
+     .on_key_down((e,cx)=>{if(e.key==='enter'||e.key==='space'){this.advancedOpen=!this.advancedOpen;cx.notify();cx.stop_propagation();}})
+     .child(svg(`mods/port-manager/icons/${this.advancedOpen?'chevron-down':'chevron-right'}.svg`).size(14).flex_none())
+     .child('Advanced'))
+    .when(this.advancedOpen,el=>el.child(v_flex().id('pm-advanced-settings').gap(12)
+     .child(v_flex().gap(5).child(div().font_medium().child('Scan interval'))
+      .child(this.choices('scan-interval','Scan interval',[ [5,'5 s'],[10,'10 s'],[30,'30 s'],[60,'1 min']],p.scanSeconds,(value,cx)=>this.set('scanSeconds',value,cx),t)))
+     .child(v_flex().gap(4).child(div().font_medium().child('SSH agent socket'))
+      .child(Input.new(this.agentSocket).w_full().h(30).px(8).rounded(5).border_1().border_color(t.input).bg(t.background).accessibility_label('SSH agent socket path'))
+      .child(div().text_color(t.muted).child('Leave empty to use the SSH environment or configuration.')))))
    ))
    .when(this.panel==='forwards',el=>el.child(v_flex().id('pm-forward-panel').flex_none().px(14).py(10).gap(6).border_b(1).border_color(t.border).text_size(12)
     .child(h_flex().items_center().child(div().flex_1().font_medium().child('Managed forwards')).child(this.iconButton('pm-refresh-forwards','refresh','Refresh forwards',cx=>this.refreshForwards(cx),t)))
@@ -158,29 +167,24 @@ export default class PortManager extends View {
    .child(v_flex().id('pm-list').flex_1().min_h(0).overflow_y_scrollbar()
     .children(groups.issues.map((issue,i)=>h_flex().id(`pm-error-${i}`).flex_none().px(14).py(5).text_size(12).text_color(t.ansi1)
      .child(`${issue.machine??'This computer'}: ${issue.error??'Scan failed'}${issue.at ? ' · showing last results' : ''}`)))
-    .children(groups.spaceGroups.flatMap((group,i)=>[
-     h_flex().id(`pm-space-${i}`).h(34).flex_none().px(14).gap(8).items_center().bg(t.raised).border_b(1).border_color(t.border)
-      .child(div().flex_1().min_w(0).truncate().child(group.space.name))
+    .children(groups.spaceGroups.flatMap((group,i)=>{
+     const key=JSON.stringify(['space',group.space.machine??null,group.space.id]);
+     const expanded=this.groupOverrides.get(key)??true;
+     return [this.groupHeading(`pm-space-${i}`,group.space.name,key,expanded,t)
       .when(Boolean(group.space.machine),el=>el.child(div().text_size(12).text_color(t.muted).child(group.space.machine)))
       .child(div().text_size(12).text_color(t.muted).child(`${group.records.length}`)),
-     ...group.records.map((entry,j)=>this.portRow(entry,`space-${i}-${j}`,t))
-    ]))
-    .when(groups.otherGroups.length>0,el=>el.child(h_flex().id('pm-other-title').h(34).flex_none().px(14).items_center().text_color(t.muted).border_b(1).border_color(t.border).child('Other ports')))
-    .children(groups.otherGroups.flatMap((group,i)=>{
+      ...(expanded?group.records.map((entry,j)=>this.portRow(entry,`space-${i}-${j}`,t)):[])];
+    }))
+    .when(groups.otherGroups.length>0,el=>el.child(this.groupHeading('pm-other-title','Other ports','other-ports',this.groupOverrides.get('other-ports')??true,t)))
+    .children((this.groupOverrides.get('other-ports')??true)?groups.otherGroups.flatMap((group,i)=>{
      const labels={terminal:'Other terminal',process:'Other process',unknown:'Unknown attribution',ambiguous:'Ambiguous checkout'};
-     const key=JSON.stringify([group.machine,group.category]);
-     const collapsible=group.category==='process', expanded=this.expandedProcesses.has(key);
-     const heading=h_flex().id(`pm-other-${i}`).h(34).flex_none().px(14).gap(8).items_center().bg(t.raised).border_b(1).border_color(t.border)
-      .when(collapsible,el=>el.cursor_pointer().hover(s=>s.bg(t.hover))
-       .tooltip(expanded?'Collapse other processes':'Expand other processes')
-       .accessibility_label(`${expanded?'Collapse':'Expand'} other processes on ${group.machine??'this computer'}`)
-       .tab_index(0).on_click((_e,cx)=>{if(expanded)this.expandedProcesses.delete(key);else this.expandedProcesses.add(key);cx.notify();})
-       .on_key_down((e,cx)=>{if(e.key==='enter'||e.key==='space'){if(expanded)this.expandedProcesses.delete(key);else this.expandedProcesses.add(key);cx.notify();cx.stop_propagation();}}))
-      .when(collapsible,el=>el.child(svg(`mods/port-manager/icons/${expanded?'chevron-down':'chevron-right'}.svg`).size(14).flex_none()))
-      .child(div().flex_1().min_w(0).truncate().child(`${group.machine??'This computer'} · ${labels[group.category]}`))
-      .child(div().text_size(12).text_color(t.muted).child(`${group.records.length}`));
-     return [heading,...(collapsible&&!expanded?[]:group.records.map((entry,j)=>this.portRow(entry,`other-${i}-${j}`,t)))];
-    })));
+     const key=JSON.stringify(['other',group.machine,group.category]);
+     const expanded=this.groupOverrides.get(key)??(group.category!=='process');
+     const label=`${group.machine??'This computer'} · ${labels[group.category]}`;
+     return [this.groupHeading(`pm-other-${i}`,label,key,expanded,t)
+      .child(div().text_size(12).text_color(t.muted).child(`${group.records.length}`)),
+      ...(expanded?group.records.map((entry,j)=>this.portRow(entry,`other-${i}-${j}`,t)):[])];
+    }):[]));
  }
  clearForwardError(){
   const c=shared(FORWARD_CMD);if(c?.phase==='done'&&['error','failed','unknown'].includes(c.result?.state))setShared(FORWARD_CMD,null);
@@ -190,6 +194,15 @@ export default class PortManager extends View {
    .child(Input.new(this.localPort).w(90).h(30).px(8).rounded(5).border_1().border_color(t.input).bg(t.background).accessibility_label('Local port'))
    .child(this.iconButton(`pm-save-forward-${id}`,this.forwardRecord?.token?'save':'play',operationBusy?'Working…':(this.forwardRecord?.token?'Save forward':'Start forward'),cx=>{const record=this.forwardRecord;this.forwardAction({action:record.token?'edit':'start',token:record.token,request:{machine:record.machine,host:record.host,remotePort:record.port,localPort:this.localPort.value(),agentSocket:preferences().agentSocket?.trim()||undefined}},cx);},t))
    .child(this.iconButton(`pm-cancel-forward-${id}`,'close','Cancel',cx=>{if(!operationBusy){this.forwardRecord=null;this.forwardMessage='';this.clearForwardError();cx.notify();}},t));
+ }
+ groupHeading(id,label,key,expanded,t){
+  const toggle=cx=>{this.groupOverrides.set(key,!expanded);cx.notify();};
+  return h_flex().id(id).h(34).flex_none().px(14).gap(8).items_center().bg(t.raised).border_b(1).border_color(t.border)
+   .cursor_pointer().hover(s=>s.bg(t.hover)).focus(s=>s.bg(t.hover))
+   .tooltip(`${expanded?'Collapse':'Expand'} ${label}`).accessibility_label(`${label} (${expanded?'expanded':'collapsed'})`).tab_index(0)
+   .on_click((_e,cx)=>toggle(cx)).on_key_down((e,cx)=>{if(e.key==='enter'||e.key==='space'){toggle(cx);cx.stop_propagation();}})
+   .child(svg(`mods/port-manager/icons/${expanded?'chevron-down':'chevron-right'}.svg`).size(14).flex_none())
+   .child(div().flex_1().min_w(0).truncate().child(label));
  }
  portRow({record:r,stale},id,t){
   const managed=managedForwardFor(r,this.forwardEntries);
