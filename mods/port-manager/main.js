@@ -11,9 +11,10 @@ import {createForwardWorker} from './forward-worker.js';
 import {managedForwardFor, sameListener} from './forward-match.js';
 import {forwardFeedback} from './forward-feedback.js';
 import {browserUrl} from './port-url.js';
+import {scanDue} from './scan-schedule.js';
 
 const PREF='port-manager.preferences', DATA='port-manager.snapshots', FORWARD_CMD='port-manager.forward-command';
-const defaults={strategy:'process',name:'',nameMode:'text',nameAction:'exclude',ports:'',portAction:'include',includeUnattached:false};
+const defaults={strategy:'process',name:'',nameMode:'text',nameAction:'exclude',ports:'',portAction:'include',includeUnattached:false,scanSeconds:5};
 const preferences=()=>({...defaults,...(shared(PREF)??{})});
 const snapshots=()=>shared(DATA)??[];
 export default class PortManager extends View {
@@ -26,11 +27,11 @@ export default class PortManager extends View {
   }
   if(checking()) return;
   this.worker=createForwardWorker({read:()=>shared(FORWARD_CMD),write:value=>setShared(FORWARD_CMD,value),...this.forwardRuntime});this.worker.interrupt();
-  this.scan(cx); cx.timer.every(5000,cx=>{if(window()?.active)this.scan(cx);});
+  this.scan(cx); cx.timer.every(1000,cx=>{if(window()?.active&&scanDue(Date.now(),this.lastScanStarted,preferences().scanSeconds))this.scan(cx);});
   cx.timer.every(300,cx=>{cx.spawn(async cx=>{await this.worker.execute();});});
  }
  scan(cx) {
-  if(this.busy)return; this.busy=true;
+  if(this.busy)return; this.busy=true; this.lastScanStarted=Date.now();
   cx.spawn(async cx=>{try {const result=await scanAll(snapshots(),preferences().includeUnattached); if(snapshotsChanged(snapshots(),result))setShared(DATA,result);} catch(e){console.warn(`port-manager: ${e}`);} finally {this.busy=false;cx.notify();}});
  }
  set(key,value,cx){
@@ -118,6 +119,8 @@ export default class PortManager extends View {
    .when(this.panel==='settings',el=>el.child(v_flex().id('pm-settings-panel').flex_none().px(14).py(10).gap(12).border_b(1).border_color(t.border).text_size(12)
     .child(v_flex().gap(5).child(div().font_medium().child('Space attribution'))
      .child(this.choices('strategy','Space attribution',[ ['process','Process tree'],['cwd','Working directory']],p.strategy,(v,cx)=>this.set('strategy',v,cx),t)))
+    .child(v_flex().gap(5).child(div().font_medium().child('Scan interval'))
+     .child(this.choices('scan-interval','Scan interval',[ [5,'5 s'],[10,'10 s'],[30,'30 s'],[60,'1 min']],p.scanSeconds,(value,cx)=>this.set('scanSeconds',value,cx),t)))
     .child(v_flex().gap(5).child(div().font_medium().child('Machines'))
      .child(this.switchControl('unattached','Scan ready machines without spaces',p.includeUnattached,(value,cx)=>this.set('includeUnattached',value,cx),t))
      .child(div().text_color(t.muted).child('Only machines already connected to Herdr are scanned.')))
