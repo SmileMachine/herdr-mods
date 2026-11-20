@@ -21,7 +21,7 @@ export default class PortManager extends View {
  init(_p,cx) {
   this.popup=props()?.view==='popup' || Boolean(props()?.overlay); this.errors={}; this.busy=false; this.panel=null; this.expandedProcesses=new Set(); this.forwardRecord=null; this.forwardMessage=''; this.forwardStates={}; this.forwardEntries=[]; this.forwardRuntime=createForwardRuntime(); this.lastForwardCommand=null; this.forwardRefreshBusy=false;
   if (this.popup) {
-   const p=preferences(); this.name=InputState.new({value:p.name,placeholder:'e.g. node'}); this.ports=InputState.new({value:p.ports,placeholder:'e.g. 3000, 8000-8999'}); this.localPort=InputState.new({placeholder:'Local port'}); this.agentSocket=InputState.new({value:p.agentSocket??'',placeholder:'Optional absolute path'});
+   const p=preferences(); this.errors=validateDrafts(p.name,p.ports,p.nameMode); this.name=InputState.new({value:p.name,placeholder:'e.g. node'}); this.ports=InputState.new({value:p.ports,placeholder:'e.g. 3000, 8000-8999'}); this.localPort=InputState.new({placeholder:'Local port'}); this.agentSocket=InputState.new({value:p.agentSocket??'',placeholder:'Optional absolute path'});
    const changed=(_e,cx)=>{const result=applyDrafts(preferences(),this.name.value(),this.ports.value());this.errors=result.errors;setShared(PREF,result.next);cx.notify();};
    this.name.on('change',changed); this.ports.on('change',changed); cx.timer.every(500,cx=>{const c=shared(FORWARD_CMD),key=c?`${c.id}:${c.phase}`:'';if(key!==this.lastForwardCommand){this.lastForwardCommand=key;if(c?.phase==='done'){if(c.id===this.ownForwardCommand&&c.result?.state==='running'){this.forwardRecord=null;}this.refreshForwards(cx);}cx.notify();}}); this.agentSocket.on('change',(_e,cx)=>{setShared(PREF,{...preferences(),agentSocket:this.agentSocket.value()});cx.notify();}); if(!checking())this.refreshForwards(cx); return;
   }
@@ -39,7 +39,7 @@ export default class PortManager extends View {
   // A regex draft can be invalid when switching modes. Keep the last valid
   // preference until corrected, and display the error beside the field.
   const errors=validateDrafts(this.name.value(),this.ports.value(),next.nameMode);
-  if(key==='nameMode' && errors.name){this.errors={...errors,name:'Enter a valid JavaScript regular expression before switching to Regex.'};cx.notify();return;}
+  if(key==='nameMode' && errors.name){this.errors={...errors,name:'Enter a valid RE2 expression before switching to Regex.'};cx.notify();return;}
   const result=applyDrafts(next,this.name.value(),this.ports.value());
   this.errors=result.errors;setShared(PREF,result.next);cx.notify();
  }
@@ -107,13 +107,14 @@ export default class PortManager extends View {
       .child(Input.new(this.name).flex_1().min_w(0).h(30).px(8).rounded(5).border_1().border_color(this.errors.name?t.ansi1:t.input).bg(t.background).accessibility_label('Process name'))
       .child(this.choices('name-action','Process name filter',[ ['include','Include'],['exclude','Exclude']],p.nameAction,(v,cx)=>this.set('nameAction',v,cx),t)))
      .child(h_flex().gap(6).items_center().child(div().text_color(t.muted).child('Match')).child(this.choices('name-mode','Process name match mode',[ ['text','Text'],['regex','Regex']],p.nameMode,(v,cx)=>this.set('nameMode',v,cx),t)))
-     .when(Boolean(this.errors.name),e=>e.child(div().text_color(t.ansi1).child(`${this.errors.name} Previous valid filter remains active.`))))
+     .when(p.nameMode==='regex',e=>e.child(div().text_color(t.muted).child('RE2 syntax: no lookaround or backreferences.')))
+     .when(Boolean(this.errors.name),e=>e.child(div().text_color(t.ansi1).child(`${this.errors.name} Check the filter before continuing.`))))
     .child(v_flex().gap(4)
      .child(div().font_medium().child('Ports'))
      .child(h_flex().gap(6).items_center()
       .child(Input.new(this.ports).flex_1().min_w(0).h(30).px(8).rounded(5).border_1().border_color(this.errors.ports?t.ansi1:t.input).bg(t.background).accessibility_label('Ports'))
       .child(this.choices('port-action','Port filter',[ ['include','Include'],['exclude','Exclude']],p.portAction,(v,cx)=>this.set('portAction',v,cx),t)))
-     .when(Boolean(this.errors.ports),e=>e.child(div().text_color(t.ansi1).child(`${this.errors.ports} Previous valid filter remains active.`))))
+     .when(Boolean(this.errors.ports),e=>e.child(div().text_color(t.ansi1).child(`${this.errors.ports} Check the filter before continuing.`))))
 
    ))
    .when(this.panel==='settings',el=>el.child(v_flex().id('pm-settings-panel').flex_none().px(14).py(10).gap(12).border_b(1).border_color(t.border).text_size(12)

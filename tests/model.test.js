@@ -28,11 +28,11 @@ test('port ranges validate inclusively', () => {
   assert.deepEqual(parsePortRanges('80, 3000-3002'),[[80,80],[3000,3002]]);
   for (const v of ['0','65536','9-2','1,','x']) assert.throws(() => parsePortRanges(v));
 });
-test('regex uses standard JavaScript groups, alternation and quantifiers', () => {
+test('RE2 regex supports groups, alternation and quantifiers', () => {
   const match = compileNamePattern('^(node|python)[0-9]*$', 'regex');
   assert.equal(match('Node42'), true); assert.equal(match('python'), true);
   assert.equal(match('node-dev'), false);
-  assert.throws(() => compileNamePattern('[','regex'), /Invalid regular expression/);
+  assert.throws(() => compileNamePattern('[','regex'), /Unsupported or invalid RE2 expression/);
 });
 test('filters combine fields without mutating records and retain unknown names', () => {
   const rows=[{name:'codex',port:3000,terminal:'yes'},{name:'node',port:8000,terminal:'no'},{name:null,port:3001,terminal:'unknown'}];
@@ -43,4 +43,13 @@ test('filters combine fields without mutating records and retain unknown names',
 test('removed quick filters do not hide ports from old saved preferences', () => {
   const filter=compileFilter({terminalOnly:true,lowPortsOnly:true});
   assert.equal(filter({name:'service',port:50000,terminal:'no'}),true);
+});
+
+
+test('RE2 avoids catastrophic backtracking and rejects unsupported patterns',()=>{
+ const re=compileNamePattern('(a+)+$', 'regex');
+ assert.equal(re('a'.repeat(30000)+'!'),false);
+ assert.throws(()=>compileNamePattern('(?=foo)foo','regex'),/RE2/);
+ assert.throws(()=>compileNamePattern('(foo)\\1','regex'),/RE2/);
+ assert.equal(compileFilter({name:'(?=foo)',nameMode:'regex'})({name:'foo',port:80}),false);
 });

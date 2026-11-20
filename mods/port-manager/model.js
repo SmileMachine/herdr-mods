@@ -1,3 +1,5 @@
+import {RE2JS} from './vendor/re2js.js';
+
 // Pure discovery, attribution and visibility logic. Machine-scoped IDs are essential:
 // PIDs and paths are not globally unique.
 export function parseLsof(text) {
@@ -69,17 +71,18 @@ export function parsePortRanges(text) {
   });
 }
 
-// Use the host JavaScript regex engine; invalid patterns are reported to the UI.
+// RE2JS avoids catastrophic backtracking. Patterns use RE2 syntax.
 export function compileNamePattern(text, mode = 'text') {
   if (!text) return null;
   if (mode === 'text') { const needle = text.toLowerCase(); return (name) => name.toLowerCase().includes(needle); }
   if (mode !== 'regex') throw new Error('Unknown name mode');
-  let re; try { re = new RegExp(text, 'i'); } catch { throw new Error('Invalid regular expression'); }
+  let re; try { re = RE2JS.compile(text, RE2JS.CASE_INSENSITIVE); } catch { throw new Error('Unsupported or invalid RE2 expression'); }
   return (name) => re.test(name);
 }
 
 export function compileFilter(config = {}) {
-  const name = compileNamePattern(config.name ?? '', config.nameMode ?? 'text');
+  let name;
+  try { name = compileNamePattern(config.name ?? '', config.nameMode ?? 'text'); } catch { return () => false; }
   const ports = parsePortRanges(config.ports ?? '');
   const nameExclude = config.nameAction === 'exclude', portExclude = config.portAction === 'exclude';
   return (record) => {
