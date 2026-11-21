@@ -14,4 +14,4 @@ Run `npm test` from the repository root. The current suite contains host-side te
 
 ## Sharing
 
-Herdr's gallery guidance calls for a public GitHub repository with the `herdr-mod` topic, plus a `RECIPE.md` and a screenshot named `preview.png` in each mod's directory. Port Manager still needs a real screenshot before it is ready for gallery submission. Publishing the repository and adding its topic are separate steps.
+Herdr's gallery guidance calls for a public GitHub repository with the `herdr-mod` topic, plus a `RECIPE.md` and a screenshot named `preview.png` in each mod's directory. Port Manager includes a clearly identified mock preview; it still needs a real screenshot before gallery submission. Publishing the repository and adding its topic are separate steps.

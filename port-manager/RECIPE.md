@@ -2,7 +2,9 @@
 
 A status-bar entry opens a compact window for finding TCP listeners on this computer and on machines with spaces. Listeners are grouped by space first, with other listeners below; remote listeners can be forwarded to a local port.
 
-A real `preview.png` screenshot still needs to be captured before sharing this mod in the Herdr gallery.
+![Port Manager mock preview](preview.png)
+
+This preview is a hand-built mock with example data, not a screenshot of Herdr. Replace it with a real screenshot before gallery submission; see `preview/README.md`.
 
 ## What you see
 
